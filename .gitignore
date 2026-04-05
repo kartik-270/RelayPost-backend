@@ -1,0 +1,29 @@
+# Node components
+RelayPost/
+node_modules/
+.next/
+dist/
+build/
+
+# Python components
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+.env
+
+# Database volumes
+auth_db_data/
+content_db_data/
+
+# IDE and OS files
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+
+# Project specific
+.gemini/
+.env.local

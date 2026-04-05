@@ -1,0 +1,31 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+.venv/
+env/
+venv/
+PYTHONPATH
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local database (SQLite)
+*.db
+*.sqlite
+
+# Media uploads (local only)
+data/
+*.jpg
+*.png
+*.gif
+
+# OS specific files
+.DS_Store
+Thumbs.db
