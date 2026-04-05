@@ -13,7 +13,7 @@ if DATABASE_URL.startswith("postgres://"):
 is_local = "localhost" in DATABASE_URL or "127.0.0.1" in DATABASE_URL or "auth_db" in DATABASE_URL
 connect_args = {"sslmode": "require"} if not is_local else {}
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True, pool_recycle=300)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
