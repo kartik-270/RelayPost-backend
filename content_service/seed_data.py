@@ -48,7 +48,7 @@ ARTICLES = [
         "homepage_section": "TrendingNow",
         "section_order": 1,
         "status": models.ArticleStatus.PUBLISHED,
-        "hero_image": "https://images.unsplash.com/photo-1476973305712-ef470076a59b?auto=format&fit=crop&w=800",
+        "hero_image": "https://images.unsplash.com/photo-1663456887564-28e5b4b2e0d5?auto=format&fit=crop&w=800",
         "content_blocks": [
             {"id": "1", "type": "paragraph", "content": "For the first time in human history, the Arctic is becoming a navigable arena for commercial shipping on a scale previously thought impossible."}
         ],
@@ -62,7 +62,7 @@ ARTICLES = [
         "status": models.ArticleStatus.PUBLISHED,
         "homepage_section": "TrendingNow",
         "section_order": 2,
-        "hero_image": "https://images.unsplash.com/photo-1548630807-6c24194380e9?auto=format&fit=crop&w=800",
+        "hero_image": "https://images.unsplash.com/photo-1663456887564-28e5b4b2e0d5?auto=format&fit=crop&w=800",
         "content_blocks": [],
         "secondary_keywords": ["Singapore", "Future", "Logistics"],
         "category_name": "Maritime Intelligence"
@@ -73,7 +73,7 @@ ARTICLES = [
         "status": models.ArticleStatus.PUBLISHED,
         "homepage_section": "ExpertAnalysis",
         "section_order": 1,
-        "hero_image": "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800",
+        "hero_image": "https://images.unsplash.com/photo-1648614593495-e0955bf287e5?auto=format&fit=crop&w=800",
         "content_blocks": [],
         "secondary_keywords": ["AI", "SupplyChain", "Simulation"],
         "category_name": "Artificial Intelligence"
@@ -84,7 +84,7 @@ ARTICLES = [
         "status": models.ArticleStatus.PUBLISHED,
         "homepage_section": "ExpertAnalysis",
         "section_order": 2,
-        "hero_image": "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=800",
+        "hero_image": "https://images.unsplash.com/photo-1681908571122-97f349e1ace0?auto=format&fit=crop&w=800",
         "content_blocks": [],
         "secondary_keywords": ["Quantum", "Computing", "Tech"],
         "category_name": "Technology"
@@ -95,7 +95,7 @@ ARTICLES = [
         "status": models.ArticleStatus.PUBLISHED,
         "homepage_section": "LatestInsights",
         "section_order": 1,
-        "hero_image": "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800",
+        "hero_image": "https://images.unsplash.com/photo-1653549893012-b8b4fbe97630?auto=format&fit=crop&w=800",
         "content_blocks": [],
         "secondary_keywords": ["Automation", "Freight", "Logistics"],
         "category_name": "Global Trade"

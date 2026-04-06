@@ -1,0 +1,68 @@
+services:
+  auth_db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_password
+      POSTGRES_DB: auth_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth_service:
+    build: 
+      context: ./auth_service
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./auth_service/.env
+    volumes:
+      - ./auth_service:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      - DATABASE_URL=postgresql://auth_user:auth_password@auth_db:5432/auth_db
+    depends_on:
+      auth_db:
+        condition: service_healthy
+
+  content_db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: content_user
+      POSTGRES_PASSWORD: content_password
+      POSTGRES_DB: content_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - content_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U content_user -d content_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  content_service:
+    build:
+      context: ./content_service
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./content_service/.env
+    volumes:
+      - ./content_service:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    environment:
+      - DATABASE_URL=postgresql://content_user:content_password@content_db:5432/content_db
+    depends_on:
+      content_db:
+        condition: service_healthy
+
+volumes:
+  auth_db_data:
+  content_db_data:
