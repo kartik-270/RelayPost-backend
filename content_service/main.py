@@ -129,6 +129,42 @@ def get_media_file(media_id: uuid.UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Media not found")
     return Response(content=db_media.data, media_type=db_media.content_type)
 
+@app.get("/admin/media", response_model=List[schemas.MediaResponse])
+def get_all_media(skip: int = 0, limit: int = 50, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
+    media_list = crud.get_all_media(db, skip=skip, limit=limit)
+    return [
+        {
+            "id": m.id,
+            "filename": m.filename,
+            "content_type": m.content_type,
+            "size": m.size,
+            "created_at": m.created_at,
+            "url": f"{MEDIA_BASE_URL}/public/media/{m.id}"
+        } for m in media_list
+    ]
+
+# --- USER CONTRIBUTION ENDPOINTS ---
+
+@app.post("/public/contributions", response_model=schemas.UserContributionResponse)
+def submit_contribution(contribution: schemas.UserContributionCreate, db: Session = Depends(get_db), current_user: TokenData = Depends(verify_token)):
+    return crud.create_user_contribution(db, uuid.UUID(current_user.user_id), contribution)
+
+@app.get("/admin/contributions", response_model=List[schemas.UserContributionResponse])
+def list_contributions(skip: int = 0, limit: int = 50, status: str = None, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
+    return crud.get_user_contributions(db, skip=skip, limit=limit, status=status)
+
+@app.put("/admin/contributions/{contribution_id}", response_model=schemas.UserContributionResponse)
+def update_contribution(contribution_id: uuid.UUID, data: dict, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
+    updated = crud.update_contribution_status(
+        db, 
+        contribution_id, 
+        status=data.get("status"), 
+        admin_notes=data.get("admin_notes")
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Contribution not found")
+    return updated
+
 # --- SUGGESTION ENDPOINTS ---
 
 @app.post("/admin/articles/suggest-keywords", response_model=List[schemas.KeywordSuggestion])

@@ -19,6 +19,11 @@ class TemplateType(str, enum.Enum):
     TECH = "tech"
     SEO_BLOG = "seo_blog"
 
+class ThemeType(str, enum.Enum):
+    STANDARD = "standard"
+    INTELLIGENCE = "intelligence"
+    SPORTS = "sports"
+
 # Association Tables for Many-to-Many Relationships
 article_category_link = Table(
     'article_category_link',
@@ -79,7 +84,7 @@ class Article(Base):
     faq_section = Column(JSONB, default=list)
     
     # Admin / Backend Fields
-    status = Column(Enum(ArticleStatus), default=ArticleStatus.DRAFT, nullable=False)
+    status = Column(Enum(ArticleStatus, native_enum=False), default=ArticleStatus.DRAFT, nullable=False)
     visibility = Column(String, default="public") # public/private
     is_featured = Column(Boolean, default=False) # Feature on homepage
     
@@ -89,6 +94,7 @@ class Article(Base):
     
     # Interactions
     views_count = Column(Integer, default=0)
+    theme = Column(Enum(ThemeType, native_enum=False), default=ThemeType.STANDARD, nullable=False)
     
     # Timestamps
     scheduled_at = Column(DateTime(timezone=True), nullable=True)
@@ -155,3 +161,21 @@ class Reflection(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     article = relationship("Article", back_populates="reflections")
+
+class UserContribution(Base):
+    __tablename__ = "user_contributions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), index=True, nullable=False)
+    content_type = Column(String, nullable=False) # e.g. "article", "insight", "tip"
+    header = Column(String, nullable=False)
+    main_content = Column(String, nullable=False)
+    media_urls = Column(JSONB, default=list) # List of strings
+    related_info = Column(JSONB, default=dict)
+    
+    status = Column(String, default="pending") # pending, approved, rejected
+    admin_notes = Column(String, nullable=True)
+    published_article_id = Column(UUID(as_uuid=True), ForeignKey("articles.id"), nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

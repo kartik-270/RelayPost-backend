@@ -133,6 +133,37 @@ def create_media(db: Session, filename: str, content_type: str, data: bytes, siz
 def get_media(db: Session, media_id: uuid.UUID):
     return db.query(models.Media).filter(models.Media.id == media_id).first()
 
+def get_all_media(db: Session, skip: int = 0, limit: int = 50):
+    return db.query(models.Media).order_by(models.Media.created_at.desc()).offset(skip).limit(limit).all()
+
+# --- User Contributions ---
+
+def create_user_contribution(db: Session, user_id: uuid.UUID, data: schemas.UserContributionCreate):
+    db_contribution = models.UserContribution(
+        user_id=user_id,
+        **data.model_dump()
+    )
+    db.add(db_contribution)
+    db.commit()
+    db.refresh(db_contribution)
+    return db_contribution
+
+def get_user_contributions(db: Session, skip: int = 0, limit: int = 20, status: str = None):
+    query = db.query(models.UserContribution)
+    if status:
+        query = query.filter(models.UserContribution.status == status)
+    return query.order_by(models.UserContribution.created_at.desc()).offset(skip).limit(limit).all()
+
+def update_contribution_status(db: Session, contribution_id: uuid.UUID, status: str, admin_notes: str = None):
+    db_contribution = db.query(models.UserContribution).filter(models.UserContribution.id == contribution_id).first()
+    if db_contribution:
+        db_contribution.status = status
+        if admin_notes:
+            db_contribution.admin_notes = admin_notes
+        db.commit()
+        db.refresh(db_contribution)
+    return db_contribution
+
 # --- Suggestions ---
 
 def suggest_keywords(db: Session, text: str):
@@ -212,7 +243,7 @@ def add_reflection(db: Session, article_id: uuid.UUID, data: schemas.ReflectionC
 def get_articles_by_section(db: Session, section: str, limit: int = 10):
     return db.query(models.Article)\
              .filter(models.Article.status == models.ArticleStatus.PUBLISHED)\
-             .filter(models.Article.homepage_section == section)\
+             .filter(func.lower(models.Article.homepage_section) == section.lower())\
              .order_by(models.Article.section_order.asc(), models.Article.published_at.desc())\
              .limit(limit).all()
 

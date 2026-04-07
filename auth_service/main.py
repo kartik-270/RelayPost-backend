@@ -2,7 +2,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Response
+from typing import List
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -88,7 +89,22 @@ def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):
 def read_users_me(current_user: models.User = Depends(get_current_active_user)):
     return current_user
 
-# Admin specific endpoint
+@app.get("/admin/users", response_model=List[schemas.UserResponse])
+def list_users(skip: int = 0, limit: int = 100, role: models.RoleEnum = None, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    if current_user.role != models.RoleEnum.ADMIN:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return crud.get_users(db, skip=skip, limit=limit, role=role)
+
+@app.put("/admin/users/{user_id}", response_model=schemas.UserResponse)
+def update_user_admin(user_id: str, updates: schemas.UserUpdate, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    if current_user.role != models.RoleEnum.ADMIN:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    
+    updated_user = crud.update_user(db, user_id, updates)
+    if not updated_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return updated_user
+
 @app.delete("/admin/users/{user_id}")
 def delete_user(user_id: str, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     if current_user.role != models.RoleEnum.ADMIN:

@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict
 from uuid import UUID
 from datetime import datetime
-from models import ArticleStatus, TemplateType
+from models import ArticleStatus, TemplateType, ThemeType
 
 # -- Categories & Keywords --
 class CategoryBase(BaseModel):
@@ -34,6 +34,7 @@ class ArticleBase(BaseModel):
     
     # Structure
     template_type: TemplateType = TemplateType.STANDARD
+    theme: ThemeType = ThemeType.STANDARD
     content_blocks: List[Any] = []
     media_gallery: List[Any] = []
     
@@ -175,3 +176,26 @@ class ArticleDetailResponse(ArticleResponse):
     views_count: int = 0
     likes_count: int = 0
     reflections: List[ReflectionResponse] = []
+
+# -- User Contributions --
+class UserContributionBase(BaseModel):
+    content_type: str
+    header: str
+    main_content: str
+    media_urls: List[str] = []
+    related_info: Dict[str, Any] = {}
+
+class UserContributionCreate(UserContributionBase):
+    pass
+
+class UserContributionResponse(UserContributionBase):
+    id: UUID
+    user_id: UUID
+    status: str
+    admin_notes: Optional[str] = None
+    published_article_id: Optional[UUID] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
