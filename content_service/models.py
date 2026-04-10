@@ -179,3 +179,30 @@ class UserContribution(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class SystemSettings(Base):
+    __tablename__ = "system_settings"
+    
+    id = Column(Integer, primary_key=True, default=1) # Singleton pattern
+    site_name = Column(String, default="RelayPost")
+    site_tagline = Column(String, default="Digital Editorial Intelligence")
+    site_description = Column(String, nullable=True)
+    contact_email = Column(String, nullable=True)
+    
+    # Flexible JSON fields for social and extra config
+    social_links = Column(JSONB, default=dict) # {twitter: "", linkedin: ""}
+    seo_defaults = Column(JSONB, default=dict) # {meta_description: ""}
+    
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class ContactInquiry(Base):
+    __tablename__ = "contact_inquiries"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    full_name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    status = Column(String, default="unread") # unread, read, archived
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

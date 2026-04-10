@@ -41,3 +41,29 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
     role: Optional[RoleEnum] = None
+
+class InviteCreate(BaseModel):
+    email: EmailStr
+    role: RoleEnum = RoleEnum.VIEWER
+
+class InviteResponse(BaseModel):
+    id: UUID
+    email: EmailStr
+    token: str
+    role: RoleEnum
+    expires_at: datetime
+    is_used: bool
+
+    class Config:
+        from_attributes = True
+
+class InviteSignup(BaseModel):
+    token: str
+    password: str = Field(..., min_length=8, max_length=72)
+    display_name: Optional[str] = None
+
+class AuthStats(BaseModel):
+    total_users: int
+    admin_count: int
+    publisher_count: int
+    viewer_count: int

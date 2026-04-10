@@ -10,14 +10,29 @@ from sqlalchemy.orm import Session
 import google.auth.transport.requests
 from google.oauth2 import id_token
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 import os
 from datetime import timedelta
 
 import crud, models, schemas
+import mail_utils
 from auth_deps import get_current_active_user, get_password_hash, verify_password, create_access_token, get_current_user
 from database import engine, get_db
 
 app = FastAPI(title="Auth Microservice")
+
+# --- EXCEPTION HANDLERS ---
+@app.exception_handler(IntegrityError)
+async def integrity_exception_handler(request, exc: IntegrityError):
+    msg = str(exc.orig).lower()
+    detail = "An item with this value already exists."
+    
+    if "unique constraint" in msg or "already exists" in msg:
+        if "users_email_key" in msg: detail = "This email is already registered."
+        
+        return Response(content='{"detail": "' + detail + '"}', status_code=409, media_type="application/json")
+    
+    return Response(content='{"detail": "Database integrity error."}', status_code=400, media_type="application/json")
 
 cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
 
@@ -65,7 +80,12 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
 @app.post("/auth/google")
 def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):
     try:
-        idinfo = id_token.verify_oauth2_token(request.token, google.auth.transport.requests.Request(), GOOGLE_CLIENT_ID)
+        idinfo = id_token.verify_oauth2_token(
+            request.token, 
+            google.auth.transport.requests.Request(), 
+            GOOGLE_CLIENT_ID,
+            clock_skew_in_seconds=10
+        )
         email = idinfo['email']
         google_id = idinfo['sub']
         name = idinfo.get('name')
@@ -118,3 +138,58 @@ def delete_user(user_id: str, current_user: models.User = Depends(get_current_ac
     user_to_delete.is_active = False
     db.commit()
     return {"message": "User deleted successfully"}
+
+# --- INVITATION ROUTES ---
+
+@app.post("/admin/invites", response_model=schemas.InviteResponse)
+async def create_invitation(invite: schemas.InviteCreate, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    if current_user.role != models.RoleEnum.ADMIN:
+        raise HTTPException(status_code=403, detail="Only admins can invite members")
+    
+    db_invite = crud.create_invite(db, email=invite.email, role=invite.role)
+    # Send email
+    await mail_utils.send_invite_email(invite.email, db_invite.token)
+    
+    return db_invite
+
+@app.get("/auth/invite/{token}", response_model=schemas.InviteResponse)
+def get_invite_details(token: str, db: Session = Depends(get_db)):
+    db_invite = crud.get_invite_by_token(db, token)
+    if not db_invite:
+        raise HTTPException(status_code=404, detail="Invalid or expired invitation")
+    return db_invite
+
+@app.post("/auth/invite/register", response_model=schemas.UserResponse)
+def register_by_invite(payload: schemas.InviteSignup, db: Session = Depends(get_db)):
+    db_invite = crud.get_invite_by_token(db, payload.token)
+    if not db_invite:
+        raise HTTPException(status_code=404, detail="Invalid or expired invitation")
+    
+    # Check if email is already taken
+    existing_user = crud.get_user_by_email(db, email=db_invite.email)
+    if existing_user:
+        crud.mark_invite_used(db, db_invite.id)
+        raise HTTPException(status_code=400, detail="User already registered")
+
+    # Create User
+    hashed_password = get_password_hash(payload.password)
+    user_create = schemas.UserCreate(
+        email=db_invite.email, 
+        password=payload.password, 
+        display_name=payload.display_name or db_invite.email.split('@')[0],
+        role=db_invite.role
+    )
+    user = crud.create_user(db=db, user=user_create, hashed_password=hashed_password)
+    
+    # Mark invite as used
+    crud.mark_invite_used(db, db_invite.id)
+    
+    return user
+
+# --- STATS ROUTES ---
+
+@app.get("/admin/stats/auth", response_model=schemas.AuthStats)
+def get_auth_statistics(current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    if current_user.role != models.RoleEnum.ADMIN:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return crud.get_auth_stats(db)

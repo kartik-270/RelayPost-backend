@@ -199,3 +199,36 @@ class UserContributionResponse(UserContributionBase):
 
     class Config:
         from_attributes = True
+
+# -- System Settings --
+class SystemSettingsBase(BaseModel):
+    site_name: str = "RelayPost"
+    site_tagline: str = "Digital Editorial Intelligence"
+    site_description: Optional[str] = None
+    contact_email: Optional[str] = None
+    social_links: Dict[str, str] = {}
+    seo_defaults: Dict[str, str] = {}
+
+class SystemSettingsResponse(SystemSettingsBase):
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+# -- Contact Inquiries --
+class ContactInquiryBase(BaseModel):
+    full_name: str
+    email: str
+    subject: str
+    message: str
+
+class ContactInquiryCreate(ContactInquiryBase):
+    pass
+
+class ContactInquiryResponse(ContactInquiryBase):
+    id: UUID
+    status: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True

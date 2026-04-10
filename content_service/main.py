@@ -1,10 +1,14 @@
 import os
+import time
+import httpx
+import google.generativeai as genai
 from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 import uuid
 from typing import List, Optional
 
@@ -12,12 +16,53 @@ import crud, models, schemas
 from database import engine, get_db
 from auth_deps import verify_token, get_current_publisher, get_current_admin, TokenData
 
+
+class UnsplashRateLimiter:
+    def __init__(self, limit: int = 50, period: int = 3600):
+        self.limit = limit
+        self.period = period
+        self.requests = []
+
+    def is_allowed(self) -> bool:
+        now = time.time()
+        self.requests = [t for t in self.requests if t > now - self.period]
+        if len(self.requests) >= self.limit:
+            return False
+        self.requests.append(now)
+        return True
+
+unsplash_limiter = UnsplashRateLimiter(limit=50, period=3600)
+
+# --- GEMINI AI SETUP ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemma-3-27b-it')
+else:
+    print("Warning: GEMINI_API_KEY missing. AI features will be disabled.")
+
 try:
     models.Base.metadata.create_all(bind=engine)
 except Exception as e:
     print(f"Startup Warning: Database table creation failed (expected if DB is still starting): {e}")
 
 app = FastAPI(title="Advanced CMS Service")
+
+# --- EXCEPTION HANDLERS ---
+@app.exception_handler(IntegrityError)
+async def integrity_exception_handler(request, exc: IntegrityError):
+    msg = str(exc.orig).lower()
+    detail = "An item with this value already exists."
+    
+    if "unique constraint" in msg or "already exists" in msg:
+        if "categories_name_key" in msg: detail = "A category with this name already exists."
+        elif "categories_slug_key" in msg: detail = "A category with this slug already exists."
+        elif "keywords_tag_key" in msg: detail = "This tag already exists."
+        elif "articles_slug_key" in msg: detail = "An article with this slug already exists."
+        
+        return Response(content='{"detail": "' + detail + '"}', status_code=409, media_type="application/json")
+    
+    return Response(content='{"detail": "Database integrity error."}', status_code=400, media_type="application/json")
 
 cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
 MEDIA_BASE_URL = os.environ.get("MEDIA_BASE_URL", "http://localhost:8001")
@@ -39,15 +84,20 @@ def get_trending_articles(skip: int = 0, limit: int = 10, db: Session = Depends(
     return query.order_by(models.Article.published_at.desc()).offset(skip).limit(limit).all()
 
 @app.get("/public/articles", response_model=List[schemas.ArticleResponse])
-def get_public_articles(skip: int = 0, limit: int = 20, template: Optional[str] = None, db: Session = Depends(get_db)):
+def get_public_articles(skip: int = 0, limit: int = 20, template: Optional[str] = None, category: Optional[str] = None, db: Session = Depends(get_db)):
     query = db.query(models.Article).filter(models.Article.status == models.ArticleStatus.PUBLISHED)
     if template:
         query = query.filter(models.Article.template_type == template)
+    if category:
+        # Check if category is slug or name
+        query = query.join(models.Category).filter(
+            (func.lower(models.Category.slug) == category.lower()) | (func.lower(models.Category.name) == category.lower())
+        )
     return query.order_by(models.Article.published_at.desc()).offset(skip).limit(limit).all()
 
 @app.get("/public/articles/section/{section}", response_model=List[schemas.ArticleResponse])
-def get_articles_by_section(section: str, limit: int = 10, db: Session = Depends(get_db)):
-    return crud.get_articles_by_section(db, section=section, limit=limit)
+def get_articles_by_section(section: str, category: Optional[str] = None, limit: int = 10, db: Session = Depends(get_db)):
+    return crud.get_articles_by_section(db, section=section, category=category, limit=limit)
 
 @app.get("/public/articles/{slug}", response_model=schemas.ArticleDetailResponse)
 def get_public_article(slug: str, db: Session = Depends(get_db)):
@@ -143,6 +193,61 @@ def get_all_media(skip: int = 0, limit: int = 50, db: Session = Depends(get_db),
         } for m in media_list
     ]
 
+@app.get("/admin/media/stock/search")
+async def search_unsplash_stock(query: str, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
+    if not unsplash_limiter.is_allowed():
+        raise HTTPException(status_code=429, detail="Unsplash search quota exceeded (50/hr). Please try again later.")
+
+    access_key = os.environ.get("UNSPLASH_ACCESS_KEY")
+    if not access_key:
+        raise HTTPException(status_code=500, detail="Unsplash configuration missing on server.")
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                "https://api.unsplash.com/search/photos",
+                params={"query": query, "per_page": 24},
+                headers={"Authorization": f"Client-ID {access_key}"},
+                timeout=10.0
+            )
+            if response.status_code != 200:
+                print(f"Unsplash API Error: {response.text}")
+                raise HTTPException(status_code=response.status_code, detail="Remote stock photo provider error")
+            
+            data = response.json()
+            return data.get("results", [])
+        except Exception as e:
+            print(f"Unsplash Proxy Error: {e}")
+            raise HTTPException(status_code=500, detail="Failed to connect to stock photo provider")
+
+# --- AI INTELLIGENCE ---
+@app.post("/admin/ai/rewrite")
+async def ai_rewrite(payload: dict, current_user: TokenData = Depends(get_current_publisher)):
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=500, detail="Gemini AI is not configured on the server.")
+    
+    text = payload.get("text")
+    intent = payload.get("intent", "professional")
+    
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required for rewriting.")
+
+    prompt = f"""
+    You are an expert editorial assistant. 
+    Rewrite the following text with a '{intent}' tone.
+    Maintain the original meaning but improve clarity, impact, and style.
+    Do NOT include any preamble or extra commentary. Return ONLY the rewritten text.
+    
+    Text: {text}
+    """
+
+    try:
+        response = await model.generate_content_async(prompt)
+        return {"original": text, "rewritten": response.text.strip()}
+    except Exception as e:
+        print(f"Gemini Rewrite Error: {e}")
+        raise HTTPException(status_code=500, detail="AI Rewrite service failed.")
+
 # --- USER CONTRIBUTION ENDPOINTS ---
 
 @app.post("/public/contributions", response_model=schemas.UserContributionResponse)
@@ -152,6 +257,35 @@ def submit_contribution(contribution: schemas.UserContributionCreate, db: Sessio
 @app.get("/admin/contributions", response_model=List[schemas.UserContributionResponse])
 def list_contributions(skip: int = 0, limit: int = 50, status: str = None, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
     return crud.get_user_contributions(db, skip=skip, limit=limit, status=status)
+
+# --- USER PROFILE ENDPOINTS ---
+@app.get("/profile/stats")
+def get_profile_stats(db: Session = Depends(get_db), current_user: TokenData = Depends(verify_token)):
+    user_id = uuid.UUID(current_user.user_id)
+    return crud.get_user_profile_stats(db, user_id)
+
+@app.get("/profile/saved", response_model=List[schemas.ArticleResponse])
+def get_user_saved_articles(limit: int = 20, db: Session = Depends(get_db), current_user: TokenData = Depends(verify_token)):
+    user_id = uuid.UUID(current_user.user_id)
+    return crud.get_saved_articles(db, user_id, limit)
+
+@app.get("/profile/favorites", response_model=List[schemas.ArticleResponse])
+def get_user_favorites(limit: int = 20, db: Session = Depends(get_db), current_user: TokenData = Depends(verify_token)):
+    user_id = uuid.UUID(current_user.user_id)
+    return crud.get_favorited_articles(db, user_id, limit)
+
+@app.get("/profile/contributions", response_model=List[schemas.UserContributionResponse])
+def get_my_contributions(limit: int = 20, db: Session = Depends(get_db), current_user: TokenData = Depends(verify_token)):
+    user_id = uuid.UUID(current_user.user_id)
+    # Reusing the existing function but filtering by user if we extended it, 
+    # but crud.get_user_contributions doesn't filter by user yet. Let's do it inline:
+    return db.query(models.UserContribution).filter(models.UserContribution.user_id == user_id).order_by(models.UserContribution.created_at.desc()).limit(limit).all()
+
+@app.post("/profile/articles/{article_id}/save")
+def toggle_save(article_id: uuid.UUID, db: Session = Depends(get_db), current_user: TokenData = Depends(verify_token)):
+    user_id = uuid.UUID(current_user.user_id)
+    saved = crud.toggle_save_article(db, article_id, user_id)
+    return {"saved": saved}
 
 @app.put("/admin/contributions/{contribution_id}", response_model=schemas.UserContributionResponse)
 def update_contribution(contribution_id: uuid.UUID, data: dict, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
@@ -209,13 +343,60 @@ def archive_article(article_id: uuid.UUID, db: Session = Depends(get_db), curren
     crud.delete_article(db, db_article)
     return {"message": "Article archived successfully"}
 
-@app.put("/admin/articles/{article_id}/placement")
-def update_article_placement(article_id: uuid.UUID, placement: dict, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
-    db_article = crud.get_article(db, article_id=article_id)
-    if not db_article:
-        raise HTTPException(status_code=404, detail="Article not found")
-    
-    db_article.homepage_section = placement.get("section")
-    db_article.section_order = placement.get("order", 0)
-    db.commit()
-    return {"message": "Placement updated"}
+# --- CATEGORY ADMIN ---
+
+@app.put("/admin/categories/{category_id}", response_model=schemas.CategoryResponse)
+def update_category(category_id: uuid.UUID, category: schemas.CategoryBase, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
+    updated = crud.update_category(db, category_id, category)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return updated
+
+@app.delete("/admin/categories/{category_id}")
+def delete_category(category_id: uuid.UUID, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
+    success = crud.delete_category(db, category_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return {"message": "Category deleted"}
+
+# --- DASHBOARD ADMIN ---
+
+@app.get("/admin/stats/content")
+def get_content_statistics(db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
+    return crud.get_content_stats(db)
+
+@app.get("/admin/activity")
+def list_activity(limit: int = 15, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
+    return crud.get_recent_activity(db, limit=limit)
+
+# --- SYSTEM SETTINGS ---
+@app.get("/admin/settings", response_model=schemas.SystemSettingsResponse)
+def get_system_settings(db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
+    return crud.get_system_settings(db)
+
+@app.put("/admin/settings", response_model=schemas.SystemSettingsResponse)
+def update_system_settings(data: schemas.SystemSettingsBase, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
+    return crud.update_system_settings(db, data)
+
+@app.get("/public/settings", response_model=schemas.SystemSettingsResponse)
+def get_public_settings(db: Session = Depends(get_db)):
+    return crud.get_system_settings(db)
+
+
+# --- CONTACT INQUIRIES ---
+
+@app.post("/public/contact", response_model=schemas.ContactInquiryResponse)
+def submit_contact_inquiry(inquiry: schemas.ContactInquiryCreate, db: Session = Depends(get_db)):
+    try:
+        return crud.create_contact_inquiry(db=db, inquiry=inquiry)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Could not submit inquiry")
+
+@app.get("/admin/inquiries/notifications")
+def get_inquiry_notifications(db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
+    unread_count = crud.count_unread_inquiries(db)
+    inquiries = crud.get_unread_inquiries(db, limit=5)
+    return {
+        "unread_count": unread_count,
+        "recent_inquiries": [schemas.ContactInquiryResponse.from_attributes(i) for i in inquiries]
+    }
