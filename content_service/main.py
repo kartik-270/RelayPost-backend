@@ -15,6 +15,7 @@ from typing import List, Optional
 import crud, models, schemas
 from database import engine, get_db
 from auth_deps import verify_token, get_current_publisher, get_current_admin, TokenData
+from automation.scheduler import automation_scheduler
 
 
 class UnsplashRateLimiter:
@@ -75,7 +76,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    # Start the automation scheduler
+    automation_scheduler.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    # Clean shutdown
+    automation_scheduler.shutdown()
+
 # --- PUBLIC ENDPOINTS ---
+
+@app.get("/public/articles/search", response_model=List[schemas.ArticleResponse])
+def search_public_articles(q: str, limit: int = 10, db: Session = Depends(get_db)):
+    return crud.search_articles(db, query_str=q, limit=limit)
 
 @app.get("/public/articles/trending", response_model=List[schemas.ArticleResponse])
 def get_trending_articles(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
@@ -248,6 +263,21 @@ async def ai_rewrite(payload: dict, current_user: TokenData = Depends(get_curren
         print(f"Gemini Rewrite Error: {e}")
         raise HTTPException(status_code=500, detail="AI Rewrite service failed.")
 
+from fastapi import BackgroundTasks
+from automation.engine import ArticleAutomationEngine
+
+@app.post("/admin/ai/trigger-automation")
+async def trigger_automation_manually(background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
+    batch_size = int(os.getenv("AUTOMATION_BATCH_SIZE", "1"))
+    
+    async def run_engine():
+        engine = ArticleAutomationEngine(db)
+        await engine.run_pipeline(batch_size=batch_size)
+        
+    background_tasks.add_task(run_engine)
+    return {"message": f"Automation triggered in background for {batch_size} articles."}
+
+
 # --- USER CONTRIBUTION ENDPOINTS ---
 
 @app.post("/public/contributions", response_model=schemas.UserContributionResponse)
@@ -333,7 +363,14 @@ def update_article(article_id: uuid.UUID, update_data: schemas.ArticleUpdate, db
     db_article = crud.get_article(db, article_id=article_id)
     if not db_article:
         raise HTTPException(status_code=404, detail="Article not found")
-    return crud.update_article(db=db, db_article=db_article, update_data=update_data)
+    return crud.update_article(db=db, db_article=db_article, update_data=update_data, current_user_id=uuid.UUID(current_user.user_id))
+
+@app.put("/admin/articles/{article_id}/placement", response_model=schemas.ArticleResponse)
+def update_article_placement(article_id: uuid.UUID, update_data: schemas.ArticlePlacementUpdate, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
+    db_article = crud.update_article_placement(db, article_id=article_id, update_data=update_data)
+    if not db_article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return db_article
 
 @app.delete("/admin/articles/{article_id}")
 def archive_article(article_id: uuid.UUID, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
@@ -400,3 +437,15 @@ def get_inquiry_notifications(db: Session = Depends(get_db), current_user: Token
         "unread_count": unread_count,
         "recent_inquiries": [schemas.ContactInquiryResponse.from_attributes(i) for i in inquiries]
     }
+
+@app.get("/admin/notifications", response_model=List[schemas.AdminNotificationResponse])
+def list_admin_notifications(skip: int = 0, limit: int = 20, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
+    return db.query(models.AdminNotification).order_by(models.AdminNotification.created_at.desc()).offset(skip).limit(limit).all()
+
+@app.post("/admin/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: uuid.UUID, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
+    notif = db.query(models.AdminNotification).filter(models.AdminNotification.id == notification_id).first()
+    if notif:
+        notif.is_read = True
+        db.commit()
+    return {"message": "Notification marked as read"}

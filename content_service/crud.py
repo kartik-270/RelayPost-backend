@@ -67,6 +67,19 @@ def get_articles(db: Session, skip: int = 0, limit: int = 100, status: models.Ar
         query = query.filter(models.Article.status == status)
     return query.order_by(models.Article.created_at.desc()).offset(skip).limit(limit).all()
 
+def search_articles(db: Session, query_str: str, limit: int = 10):
+    if not query_str: return []
+    search_pattern = f"%{query_str.lower()}%"
+    return db.query(models.Article).filter(
+        models.Article.status == models.ArticleStatus.PUBLISHED,
+        or_(
+            func.lower(models.Article.title).like(search_pattern),
+            func.lower(models.Article.subtitle).like(search_pattern),
+            func.lower(models.Article.excerpt).like(search_pattern),
+            func.lower(models.Article.focus_keyword).like(search_pattern)
+        )
+    ).order_by(models.Article.published_at.desc()).limit(limit).all()
+
 def create_article(db: Session, article: ArticleCreate):
     # Separate the complex relational fields
     article_data = article.model_dump(exclude={'category_id', 'category_name', 'keyword_ids'})
@@ -97,19 +110,36 @@ def create_article(db: Session, article: ArticleCreate):
     
     return db_article
 
-def update_article(db: Session, db_article: models.Article, update_data: ArticleUpdate):
+def update_article(db: Session, db_article: models.Article, update_data: ArticleUpdate, current_user_id: uuid.UUID = None):
     update_dict = update_data.model_dump(exclude_unset=True, exclude={'category_name'})
     
     if update_data.category_name:
         cat = get_or_create_category(db, update_data.category_name)
         db_article.category_id = cat.id
     
+    # If the article is being published, update the author to the person who published it
+    # especially if it was a system-generated article (SYSTEM_AUTHOR_ID)
+    if update_data.status == models.ArticleStatus.PUBLISHED:
+        if current_user_id:
+            db_article.author_id = current_user_id
+        if db_article.published_at is None:
+            db_article.published_at = datetime.now(timezone.utc)
+
     for key, value in update_dict.items():
         setattr(db_article, key, value)
     
-    if update_data.status == models.ArticleStatus.PUBLISHED and db_article.published_at is None:
-        db_article.published_at = datetime.now(timezone.utc)
-    
+    db.commit()
+    db.refresh(db_article)
+    return db_article
+
+def update_article_placement(db: Session, article_id: uuid.UUID, update_data: schemas.ArticlePlacementUpdate):
+    db_article = db.query(models.Article).filter(models.Article.id == article_id).first()
+    if not db_article:
+        return None
+        
+    for key, value in update_data.model_dump(exclude_unset=True).items():
+        setattr(db_article, key, value)
+        
     db.commit()
     db.refresh(db_article)
     return db_article

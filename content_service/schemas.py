@@ -94,9 +94,16 @@ class ArticleUpdate(BaseModel):
     homepage_section: Optional[str] = None
     section_order: Optional[int] = None
 
+
+class ArticlePlacementUpdate(BaseModel):
+    is_featured: Optional[bool] = None
+    homepage_section: Optional[str] = None
+    section_order: Optional[int] = None
+
 class ArticleResponse(ArticleBase):
     id: UUID
     author_id: UUID
+    category_name: Optional[str] = None
     scheduled_at: Optional[datetime] = None
     published_at: Optional[datetime] = None
     created_at: datetime
@@ -228,6 +235,21 @@ class ContactInquiryCreate(ContactInquiryBase):
 class ContactInquiryResponse(ContactInquiryBase):
     id: UUID
     status: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# -- Admin Notifications --
+class AdminNotificationBase(BaseModel):
+    title: str
+    message: str
+    type: str = "info" # info, success, warning, error
+    link: Optional[str] = None
+
+class AdminNotificationResponse(AdminNotificationBase):
+    id: UUID
+    is_read: bool
     created_at: datetime
     
     class Config:

@@ -24,6 +24,15 @@ class ThemeType(str, enum.Enum):
     INTELLIGENCE = "intelligence"
     SPORTS = "sports"
 
+class NotificationType(str, enum.Enum):
+    INFO = "info"
+    SUCCESS = "success"
+    WARNING = "warning"
+    ERROR = "error"
+
+# Constants
+SYSTEM_AUTHOR_ID = uuid.UUID("00000000-0000-0000-0000-000000000000")
+
 # Association Tables for Many-to-Many Relationships
 article_category_link = Table(
     'article_category_link',
@@ -105,6 +114,11 @@ class Article(Base):
     # Relationships
     category_id = Column(UUID(as_uuid=True), ForeignKey('categories.id'), nullable=True)
     category = relationship("Category")
+    
+    @property
+    def category_name(self):
+        return self.category.name if self.category else None
+
     media_refs = relationship("Media", back_populates="article", cascade="all, delete-orphan")
     reflections = relationship("Reflection", back_populates="article", cascade="all, delete-orphan")
     likes = relationship("ArticleLike", back_populates="article", cascade="all, delete-orphan")
@@ -204,5 +218,17 @@ class ContactInquiry(Base):
     subject = Column(String, nullable=False)
     message = Column(String, nullable=False)
     status = Column(String, default="unread") # unread, read, archived
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class AdminNotification(Base):
+    __tablename__ = "admin_notifications"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    title = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    type = Column(Enum(NotificationType, native_enum=False), default=NotificationType.INFO)
+    link = Column(String, nullable=True) # Optional link to the related item
+    is_read = Column(Boolean, default=False)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
