@@ -59,6 +59,7 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
     environment:
       - DATABASE_URL=postgresql://content_user:content_password@content_db:5432/content_db
+      - AUTOMATION_BATCH_SIZE=3
     depends_on:
       content_db:
         condition: service_healthy

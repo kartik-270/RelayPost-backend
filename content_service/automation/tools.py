@@ -75,9 +75,16 @@ class GeminiTool:
                 return json.loads(text)
             except Exception as e:
                 error_msg = str(e)
-                print(f"Gemini Generation Attempt {attempt + 1} Failed: {error_msg}")
-                if "429" in error_msg and attempt < max_retries - 1:
-                    wait_time = 20 * (attempt + 1)
+                print(f"Gemini Generation Attempt {attempt + 1} Failed: {error_msg[:200]}")
+                if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg and attempt < max_retries - 1:
+                    # Parse retry delay from gRPC format: "Please retry in 55.02s"
+                    # or REST format: "retry_delay { seconds: 47 }"
+                    import re
+                    match = (
+                        re.search(r'Please retry in (\d+)', error_msg) or
+                        re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', error_msg)
+                    )
+                    wait_time = int(match.group(1)) + 5 if match else 60 * (attempt + 1)
                     print(f"Rate limited. Retrying in {wait_time} seconds...")
                     await asyncio.sleep(wait_time)
                 else:
@@ -86,17 +93,20 @@ class GeminiTool:
 # --- Email Tool ---
 class EmailTool:
     def __init__(self):
+        smtp_port = int(os.getenv("SMTP_PORT", "465"))
+        use_starttls = smtp_port == 587
+        use_ssl = smtp_port == 465
         self.conf = ConnectionConfig(
             MAIL_USERNAME=os.getenv("SMTP_USERNAME"),
             MAIL_PASSWORD=os.getenv("SMTP_PASSWORD"),
             MAIL_FROM=os.getenv("SMTP_USERNAME", "no-reply@relaypost.com"),
-            MAIL_PORT=int(os.getenv("SMTP_PORT", "587")),
+            MAIL_PORT=smtp_port,
             MAIL_SERVER=os.getenv("SMTP_SERVER", "smtp.gmail.com"),
             MAIL_FROM_NAME="RelayPost Intelligence Automation",
-            MAIL_STARTTLS=True,
-            MAIL_SSL_TLS=False,
+            MAIL_STARTTLS=use_starttls,
+            MAIL_SSL_TLS=use_ssl,
             USE_CREDENTIALS=True,
-            VALIDATE_CERTS=False
+            VALIDATE_CERTS=True
         )
 
     async def send_notification(self, recipients: List[str], subject: str, body_html: str):

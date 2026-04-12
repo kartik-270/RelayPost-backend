@@ -5,7 +5,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Response
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -267,16 +267,21 @@ async def ai_rewrite(payload: dict, current_user: TokenData = Depends(get_curren
         print(f"Gemini Rewrite Error: {e}")
         raise HTTPException(status_code=500, detail="AI Rewrite service failed.")
 
-from fastapi import BackgroundTasks
 from automation.engine import ArticleAutomationEngine
+from database import SessionLocal as AutomationSessionLocal
 
 @app.post("/admin/ai/trigger-automation")
-async def trigger_automation_manually(background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
-    batch_size = int(os.getenv("AUTOMATION_BATCH_SIZE", "1"))
+async def trigger_automation_manually(background_tasks: BackgroundTasks, current_user: TokenData = Depends(get_current_admin)):
+    batch_size = int(os.getenv("AUTOMATION_BATCH_SIZE", "3"))  # Default 3 articles per run
+    print(f"[Trigger] Using batch_size={batch_size}")
     
     async def run_engine():
-        engine = ArticleAutomationEngine(db)
-        await engine.run_pipeline(batch_size=batch_size)
+        db = AutomationSessionLocal()
+        try:
+            engine = ArticleAutomationEngine(db)
+            await engine.run_pipeline(batch_size=batch_size)
+        finally:
+            db.close()
         
     background_tasks.add_task(run_engine)
     return {"message": f"Automation triggered in background for {batch_size} articles."}

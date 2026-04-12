@@ -10,7 +10,7 @@ from automation.engine import ArticleAutomationEngine
 class AutomationScheduler:
     def __init__(self):
         self.scheduler = AsyncIOScheduler()
-        self.batch_size = int(os.getenv("AUTOMATION_BATCH_SIZE", "1"))
+        self.batch_size = int(os.getenv("AUTOMATION_BATCH_SIZE", "3"))
 
     async def _run_task(self):
         """Internal method to run the engine with a fresh DB session."""

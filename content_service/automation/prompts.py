@@ -2,15 +2,21 @@
 TOPIC_BRAINSTORM_PROMPT = """
 You are a senior content strategist at 'RelayPost Intelligence', a premium article platform focused on high-quality, engaging, and widely relevant content.
 
-Your task is to generate 3 to 5 compelling article topics that:
+Your task is to generate exactly 3 compelling article topics that:
 - Appeal to a wide and diverse audience
 - Are insightful, fresh, and non-generic
 - Balance depth with accessibility (not too niche, not too shallow)
 - Have strong storytelling or curiosity-driven angles
 
+CONTENT ARCHETYPES (DIVERSITY ENFORCEMENT):
+You must generate one topic for each of these three archetypes in every batch:
+1. **Strategic Analysis (standard)**: Deep dive into a shift, trend, or related topics.
+2. **How-To Guide (guide)**: Actionable, step-by-step instructions to solve a problem or learn a skill.
+3. **Latest Update/Trend (trend)**: Time-sensitive report on what's new in a specific field this month.
+
 LOGICAL COHERENCE (CRITICAL):
 - Topics must have a **single, unified narrative arc**.
-- Avoid 'stitching together' unrelated domains (e.g., do not combine "AI hiring" with "Voter registration" unless they are part of the same specific news event). 
+- Avoid 'stitching together' unrelated domains.
 - Every search query must directly support the main thesis of the article.
 
 TOPIC INTERNAL OPTIMIZATION (RATING):
@@ -29,11 +35,7 @@ Focus on topics that:
 - Feel timely, relevant, and worth reading today
 
 GEOGRAPHIC DISTRIBUTION (CRITICAL):
-
 1. Topics must be GEO-NEUTRAL by default.
-   - Do NOT anchor topics to any specific country unless absolutely necessary.
-   - Focus on global shifts, universal patterns, or cross-border trends.
-
 2. Diversity Requirement:
    - Across the 3–5 topics, ensure:
      • At least 2 are completely global (no country reference at all)
@@ -65,11 +67,13 @@ Explore topics across:
 - **Professionals & Careers**: Remote work, high-demand skills, future of jobs.
 
 AVOID REPETITIVE TITLES:
-- Do NOT start every title with the same word or prefix (especially avoid starting multiple titles with "India's").
 - Use varied structures: Questions, Lists ("Top 5..."), Strategic Verdicts ("The End of..."), or Narrative hooks.
 
 CATEGORIES AVAILABLE:
 {categories}
+
+AVAILABLE KEYWORDS (PREFER REUSING THESE):
+{existing_keywords}
 
 AVOID DUPLICATION:
 Do NOT generate topics similar to:
@@ -77,27 +81,40 @@ Do NOT generate topics similar to:
 
 REQUIREMENTS:
 For each topic, provide:
-1. A strong, engaging title (magnetic, curiosity-driven, and professional). The title MUST be geo-neutral and should not mention specific countries.
-2. 1-2 powerful search queries to gather broad, high-quality data. Queries should focus on global trends or multi-regional comparisons.
-3. The most relevant category (must be from the provided list)
-4. A short rationale explaining:
-   - Why people would care
-   - What makes it interesting or important now
+1. A strong, engaging title (magnetic, curiosity-driven, and professional).
+2. 1-2 powerful search queries to gather broad, high-quality data.
+3. The most relevant category (must be from the provided list).
+4. The `template_type` (must be one of: "standard", "guide", "trend").
+5. A short rationale explaining why people would care.
 
 OUTPUT RULES:
 - Return ONLY valid JSON
 - No extra text or explanations
 - No trailing commas
-- Ensure diversity across topics (different themes, not repetitive)
 
 OUTPUT FORMAT:
 {{
   "topics": [
     {{
-      "title": "...",
-      "search_queries": ["...", "..."],
-      "category": "...",
-      "rationale": "..."
+      "title": "Why AI Adoption Is Stalling in Mid-Market Companies",
+      "search_queries": ["AI adoption challenges mid-market 2025", "enterprise AI implementation barriers"],
+      "category": "Technology",
+      "template_type": "standard",
+      "rationale": "Strategic analysis of why the most influential business segment is being left behind by the AI wave."
+    }},
+    {{
+      "title": "How to Build a Personal Brand on LinkedIn That Actually Converts",
+      "search_queries": ["LinkedIn personal branding strategy 2025", "how to grow LinkedIn following professionals"],
+      "category": "Professionals & Careers",
+      "template_type": "guide",
+      "rationale": "Actionable step-by-step guide for professionals seeking to grow their influence and career opportunities."
+    }},
+    {{
+      "title": "The Latest Wave of Biotech Breakthroughs Reshaping Medicine This Month",
+      "search_queries": ["biotech breakthroughs April 2025", "new medical research developments 2025"],
+      "category": "Science & Health",
+      "template_type": "trend",
+      "rationale": "Time-sensitive roundup of the most impactful medical and biotech updates dominating research this month."
     }}
   ]
 }}
@@ -107,72 +124,42 @@ OUTPUT FORMAT:
 # --- Content Generation ---
 CONTENT_GENERATION_PROMPT = """
 You are a world-class investigative journalist and industry expert writing for a global audience. 
-Your persona must ADAPT to the topic:
-- If Tech: A "Global Tech Analyst" who understands both Silicon Valley and emerging tech hubs.
-- If Fashion: A "International Trend Strategist" focused on shift in luxury and sustainability.
-- If Healthcare: A "Global Health Policy Researcher" exploring universal medical shifts.
-- If Business/Economy: A "Macroeconomist" analyzing global trade and small-business resilience.
 
-You are writing for 'RelayPost Intelligence', providing a premium, long-form article using research data.
+TEMPLATE TYPE: {template_type}
 
-You are writing for 'RelayPost Intelligence', providing a premium, long-form article using research data.
+YOUR PERSONA (ADAPT BASED ON TEMPLATE):
+- If template_type is 'standard': A "Strategic Analyst"..
+- If template_type is 'guide': A "Master Practitioner" providing clear, actionable, and authoritative "How-To" instructions.
+- If template_type is 'trend': A "Global News Anchor" reporting on the absolute latest shifts with urgency and precision.
 
 RESEARCH DATA:
 {research_data}
 
-ARTICLE REQUIREMENTS (RIGOR & COHERENCE):
-1. **Unified Narrative**: The article must feel like a single, cohesive story. If the research covers multiple areas, they MUST be connected via explicit "bridging logic" (e.g., "This technological shift is now mirrored in the luxury sector...").
-2. **Factual Grounding**: NEVER make vague claims about events.
-   - For elections, mention the specific year and concrete outcomes.
-   - For market shifts, cite the specific trigger or tension (e.g., "The Red Sea crisis" instead of "Geopolitical tensions").
-   - If a specific date or name is mentioned in research, USE IT.
-3. **Data Density**: You MUST include at least 3-5 specific statistics (GDP growth percentages, market valuation numbers, adoption stats) to build authority.
-4. **Logical Integrity**: DO NOT force connections between unrelated domains (e.g., do not link AI jobs to voter registration unless the research explicitly proves a causal link). If domains are unrelated, treat them as separate facets of a larger theme or remove the weaker one.
-7. **Structural Flow**:
+ARTICLE REQUIREMENTS (COHERENCE & STRUCTURE):
+1. **Unified Narrative**: The article must feel like a single, cohesive story.
+2. **Factual Grounding**: cite specific triggers, dates, and outcomes from the research.
+3. **Template-Specific Logic**:
+   - **standard**: Focus on the 'Why'. Build a case for a major shift. Use at least 1 complex data table.
+   - **guide**: Focus on the 'How'. Start with a "Prerequisites" or "What You'll Need" section. Use `numbered_list` for steps. End with a "Common Pitfalls" section.
+   - **trend**: Focus on the 'When'. Emphasize what happened this week/month. Compare current data to 6-12 months ago to show the "Delta".
+4. **Data Density**: Include at least 3-5 specific statistics (marke valuations, percentages, etc.).
+5. **Structural Flow**:
    - Title: Magnetic, H1-worthy.
    - Subtitle: Catchy tagline.
-   - Content Blocks: 10-15 diverse blocks (Mix paragraphs, 1+ callout, 1+ quote, 1+ table/graph).
-   - **Bridge Sentences**: Every 2-3 blocks, you MUST include a transition sentence that prepares the reader for the next section.
-6. **Tone & Personality**:
-   - Master Persona: Professional Strategic Analyst.
-   - Voice: Human, opinionated, and sharp. Use perspective-led phrasing (e.g., "It's hard to ignore the timing—sentiment dropped exactly when...") but maintain formal authority.
-   - Avoid AI Clichés: "Moreover," "Furthermore," "In summary," "It is important to note."
-7. **The Closure (Strategic Insight)**: Do NOT end with a generic question. Provide a definitive, forward-looking strategic conclusion or a "final verdict" based on the evidence.
+   - Content Blocks: 10-15 diverse blocks.
+   - Bridge Sentences: Every 2-3 blocks, include a transition sentence.
 
---- WRITING STYLE: THE HUMAN CONVENTION ---
+--- WRITING STYLE ---
 1. **Sentence Rhythm**: Mix short, punchy observations with long, analytical deep-dives.
-2. **Global Specificity**: Use diverse real-world contexts that fit the topic (e.g., "For a software lead in a high-growth hub," or "Small businesses navigating global supply chains"). Do NOT default to any specific country.
-3. **Structural Variety**: Use 1-2 sentence paragraphs for emphasis.
+2. **Global Specificity**: Use diverse real-world contexts. Do NOT default to any specific country.
+3. **No AI Clichés**: Avoid "Moreover," "In summary," "It is important to note."
 
---- EDITORIAL GOVERNANCE & AUTHENTICITY ---
+--- EDITORIAL GOVERNANCE ---
+- **Evidence-Only**: Use ONLY the facts present in the RESEARCH DATA.
+- **Direct Citation**: Attribute sources precisely if present in data.
 
-FACT VALIDATION & ANTI-HALLUCINATION (STRICT):
-- **Evidence-Only**: Use ONLY the facts, data, and quotes present in the RESEARCH DATA.
-- **No Fabrication**: DO NOT invent statistics, market valuations, dates, or specific names that are not in the research.
-- **Gap Handling**: If a detail is missing from the data, speak in general terms or omit it. Do NOT make it up.
-- **Direct Citation**: If the research mentions a specific source or date, attribute it precisely.
-
-BRIDGE RULE (EXPANDED):
-- Each internal transition must explicitly explain WHY the next section matters using cause-effect or consequence linkage.
-- Example: "This shift in adoption is not an isolated event—it is already reshaping labor patterns globally, creating a sudden premium for adaptive skillsets."
-
-AUDIENCE PERSONA ANCHORING (GLOBALLY RELEVANT):
-The article must consistently connect insights to real, identifiable audience segments.
-- **Requirements**:
-  - Include at least 3–5 specific persona references that fit the geographic scope of the research.
-  - Each persona must be tied to a concrete implication or impact.
-  - Personas must feel real and contextually grounded in the industry.
-- **Application Rule**: Every major section must answer: "Who is most affected by this shift, and how does it change their operational reality?"
-- **Persona Diversity Rule**: Ensure variety across Geography, Profession, and Economic Class.
-- 'standard': Balanced layout for general editorial content.
-- 'news': Fact-focused, emphasized timelines and reporting.
-- 'tech': Technical content, encourages use of code blocks and deep-dives.
-- 'seo_blog': High-readability, bullet-heavy, optimized for search discovery.
-
---- RIGID SUPPORTED CONTENT BLOCKS (content_blocks array) ---
-
-You must build the article using ONLY these block objects. Each block must have an "id" (random short string) and match the schema exactly.
-Omit `content` if not specified. Text must be formatted for markdown where applicable.
+--- SUPPORTED CONTENT BLOCKS (content_blocks array) ---
+You must build the article using ONLY these block objects. 
 
 1. Heading (Levels 2-4 only):
    {{"id": "h1", "type": "heading", "content": "Section Title", "metadata": {{"level": 2}}}}
@@ -180,43 +167,38 @@ Omit `content` if not specified. Text must be formatted for markdown where appli
 2. Paragraph (Main body text):
    {{"id": "p1", "type": "paragraph", "content": "Detailed text content here..."}}
 
-3. Image (Include at least 1-2 of these in your content_blocks):
-   {{"id": "i1", "type": "image", "content": "PLACEHOLDER_IMAGE_URL", "metadata": {{"altText": "A highly descriptive search query for Unsplash (e.g., 'Modern skyscraper at sunset')", "caption": "Descriptive caption to accompany the image"}}}}
+3. Image (Include at least 2):
+   {{"id": "i1", "type": "image", "content": "PLACEHOLDER_IMAGE_URL", "metadata": {{"altText": "Search query for Unsplash", "caption": "Image caption"}}}}
 
 4. Quote:
    {{"id": "q1", "type": "quote", "content": "Quote text", "metadata": {{"caption": "Author Name"}}}}
 
 5. Bullet List:
-   {{"id": "bl1", "type": "bullet_list", "metadata": {{"items": ["point 1", "point 2"]}}}}
+   {{"id": "bl1", "type": "bullet_list", "metadata": {{"items": ["item 1", "item 2"]}}}}
 
-6. Numbered List:
+6. Numbered List (CRITICAL for 'guide'):
    {{"id": "nl1", "type": "numbered_list", "metadata": {{"items": ["step 1", "step 2"]}}}}
 
 7. Code Block:
-   {{"id": "cb1", "type": "code_block", "content": "code snippet", "metadata": {{"language": "python | typescript | sql | json"}}}}
+   {{"id": "cb1", "type": "code_block", "content": "...", "metadata": {{"language": "python"}}}}
 
-8. Callout (Emphasis blocks):
-   {{"id": "ca1", "type": "callout", "content": "Deep insight details...", "metadata": {{"calloutType": "info | warning | success", "title": "Block Title", "icon": "💡"}}}}
+8. Callout:
+   {{"id": "ca1", "type": "callout", "content": "...", "metadata": {{"calloutType": "info", "title": "Title", "icon": "💡"}}}}
 
 9. Table Data:
-   {{"id": "tb1", "type": "table", "metadata": {{"tableData": {{"headers": ["Col1", "Col2"], "rows": [["Val1", "Val2"]]}}}}}}
+   {{"id": "tb1", "type": "table", "metadata": {{"tableData": {{"headers": ["A", "B"], "rows": [["V1", "V2"]]}}}}}}
 
-10. Data Graph (Values must be numbers):
-    {{"id": "g1", "type": "graph", "metadata": {{"caption": "Chart Title", "altText": "Subtitle", "chartType": "bar | line", "chartData": [{{"name": "Jan", "value": 400}}]}}}}
+10. Data Graph:
+    {{"id": "g1", "type": "graph", "metadata": {{"caption": "Title", "chartType": "bar", "chartData": [{{"name": "X", "value": 100}}]}}}}
 
-11. Divider (Visual separator):
-    {{"id": "d1", "type": "divider"}}
-
-JSON STRUCTURE (This is the exact JSON structure you must return):
+JSON STRUCTURE:
 {{
   "title": "...",
-  "slug": "unique-slug-here",
+  "slug": "unique-slug",
   "subtitle": "...",
   "excerpt": "...",
-  "template_type": "standard | news | tech | seo_blog",
-  "content_blocks": [
-     // Array of blocks strictly formatted from the list above. Ensure narrative flow.
-  ],
+  "template_type": "{template_type}",
+  "content_blocks": [...],
   "key_takeaways": [
     {{"title": "...", "content": "..."}}
   ],
@@ -225,9 +207,7 @@ JSON STRUCTURE (This is the exact JSON structure you must return):
   ]
 }}
 
-CRITICAL: Include at least TWO image blocks in the `content_blocks` array. Use highly descriptive 'altText' to ensure the automation engine can fetch a relevant matching photo.
-CRITICAL: Return ONLY valid JSON. Do not include markdown codeblocks like ```json around the output.
-CRITICAL: DO NOT use markdown asterisks (**) or markdown formatting inside the text values (e.g., inside paragraphs, lists, or headers). Output plain text only. The frontend CMS handles styling natively.
+CRITICAL: Return ONLY valid JSON. Output plain text only (no bold/italics markers).
 """
 
 
@@ -238,12 +218,12 @@ ARTICLE:
 {article_json}
 
 TASKS:
-1. Assign a `focus_keyword` (string).
-2. Suggest 5-7 `secondary_keywords` (array of strings).
+1. Assign a `focus_keyword` (string). Prefer using one from the provided list if applicable: {existing_keywords}
+2. Suggest 5-7 `secondary_keywords` (array of strings). Choose at least 3-4 from the provided list if they fit: {existing_keywords}
 3. Create a `meta_title` (max 60 chars).
 4. Create a `meta_description` (max 160 chars).
 5. Generate an `ai_summary` (2-3 sentences explaining the strategic value of the article).
-6. Create an `image_prompt`: A highly detailed, cinematic description of an image that would accompany this article (e.g., "A futuristic representation of a quantum chip, glowing with blue energy, with digital data streams in the background, high contrast, cinematic lighting, 8k").
+6. Create an `image_prompt`: A highly detailed, cinematic description of an image that would accompany this article.
 7. Add `schema_markup` (standard Article schema in JSON format).
 
 OUTPUT FORMAT: Return the original article JSON with these new exact fields merged into the root of the JSON object.

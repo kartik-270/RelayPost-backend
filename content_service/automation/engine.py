@@ -5,6 +5,8 @@ from typing import Optional
 import uuid
 import asyncio
 
+import re
+from sqlalchemy import func
 from automation.tools import TavilyTool, GeminiTool, EmailTool, UnsplashTool
 from automation.prompts import TOPIC_BRAINSTORM_PROMPT, CONTENT_GENERATION_PROMPT, SEO_OPTIMIZATION_PROMPT
 import crud, models, schemas
@@ -18,7 +20,7 @@ class ArticleAutomationEngine:
         self.unsplash = UnsplashTool() # Initialize UnsplashTool
         self.system_author_id = models.SYSTEM_AUTHOR_ID
 
-    async def run_pipeline(self, batch_size: int = 1):
+    async def run_pipeline(self, batch_size: int = 3):
         """Runs the full article generation pipeline."""
         print(f"[{datetime.now()}] Starting automation pipeline for {batch_size} articles...")
         
@@ -30,18 +32,32 @@ class ArticleAutomationEngine:
             recent_articles = self.db.query(models.Article).order_by(models.Article.created_at.desc()).limit(20).all()
             existing_topics = [a.title for a in recent_articles]
 
+            # Fetch a sample of keywords to encourage reuse
+            keywords_list = self.db.query(models.Keyword).order_by(func.random()).limit(40).all()
+            existing_keywords = ", ".join([k.tag for k in keywords_list])
+
             brainstorm_prompt = TOPIC_BRAINSTORM_PROMPT.format(
                 categories=", ".join(categories),
-                existing_topics=", ".join(existing_topics) if existing_topics else "None"
+                existing_topics=", ".join(existing_topics) if existing_topics else "None",
+                existing_keywords=existing_keywords if existing_keywords else "None"
             )
             brainstorm_result = await self.gemini.generate_structured(brainstorm_prompt, temperature=0.9)
-            topics = brainstorm_result.get("topics", [])[:batch_size]
+            raw_topics = brainstorm_result.get("topics", [])
+            topics = raw_topics[:batch_size]
             
-            for topic_info in topics:
+            print(f"[PIPELINE] Brainstorm returned {len(raw_topics)} topic(s). Processing {len(topics)} (batch_size={batch_size}).")
+            for i, t in enumerate(topics):
+                print(f"  Topic {i+1}: {t.get('title')} | template: {t.get('template_type')}")
+            
+            for i, topic_info in enumerate(topics):
+                print(f"\n[PIPELINE] ===== Processing topic {i+1}/{len(topics)} =====")
                 await self.process_single_topic(topic_info)
+                print(f"[PIPELINE] ===== Finished topic {i+1}/{len(topics)} =====\n")
                 
         except Exception as e:
             print(f"Pipeline Execution Failed: {e}")
+            import traceback
+            traceback.print_exc()
             self.log_notification("Automation Failure", f"Pipeline failed: {str(e)}", "error")
 
     async def process_single_topic(self, topic_info):
@@ -49,6 +65,7 @@ class ArticleAutomationEngine:
         title = topic_info["title"]
         queries = topic_info["search_queries"]
         category_name = topic_info["category"]
+        template_type = topic_info.get("template_type", "standard")
         
         print(f"Processing Topic: {title}")
         
@@ -60,17 +77,30 @@ class ArticleAutomationEngine:
                 research_data.extend(results)
             
             # 3. Content Generation (Gemini)
-            gen_prompt = CONTENT_GENERATION_PROMPT.format(research_data=str(research_data))
+            gen_prompt = CONTENT_GENERATION_PROMPT.format(
+                research_data=str(research_data),
+                template_type=template_type
+            )
             article_data = await self.gemini.generate_structured(gen_prompt, temperature=0.7)
             
             # 4. SEO & GEO Optimization
-            seo_prompt = SEO_OPTIMIZATION_PROMPT.format(article_json=str(article_data))
+            # Fetch random keywords to pass to SEO prompt for mapping
+            keywords_list = self.db.query(models.Keyword).order_by(func.random()).limit(30).all()
+            existing_keywords = ", ".join([k.tag for k in keywords_list])
+
+            seo_prompt = SEO_OPTIMIZATION_PROMPT.format(
+                article_json=str(article_data),
+                existing_keywords=existing_keywords
+            )
             final_article_data = await self.gemini.generate_structured(seo_prompt, temperature=0.5)
             
             # Ensure required fields and fallbacks
             final_article_data["status"] = models.ArticleStatus.DRAFT
             final_article_data["author_id"] = self.system_author_id
             final_article_data["category_name"] = category_name
+            
+            # Clean markdown formatting from all text fields
+            final_article_data = self.strip_markdown(final_article_data)
             
             # Fallbacks for slug, subtitle
             if not final_article_data.get("slug"):
@@ -122,10 +152,32 @@ class ArticleAutomationEngine:
             
         except Exception as e:
             print(f"Failed to process topic '{title}': {e}")
+            try:
+                self.db.rollback()  # Recover the session for the next article
+            except Exception:
+                pass
             self.log_notification("Article Generation Failed", f"Topic: {title}. Error: {str(e)}", "warning")
             
-        print("Waiting 30 seconds before processing next potential topic to avoid rate limits...")
-        await asyncio.sleep(30)
+        print("Waiting 5 seconds before processing next topic...")
+        await asyncio.sleep(5)
+
+    def strip_markdown(self, data):
+        """Recursively strips markdown bold/italic/header formatting from all string values."""
+        if isinstance(data, str):
+            # Remove bold: **text** or __text__
+            data = re.sub(r'\*\*(.*?)\*\*', r'\1', data)
+            data = re.sub(r'__(.*?)__', r'\1', data)
+            # Remove italic: *text* or _text_
+            data = re.sub(r'\*(.*?)\*', r'\1', data)
+            data = re.sub(r'_(.*?)_', r'\1', data)
+            # Remove markdown headers: ## Title -> Title
+            data = re.sub(r'^#{1,6}\s+', '', data, flags=re.MULTILINE)
+            return data
+        elif isinstance(data, dict):
+            return {k: self.strip_markdown(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self.strip_markdown(item) for item in data]
+        return data
 
     async def save_local_image(self, remote_url: str, filename_prefix: str) -> Optional[str]:
         """Downloads an image and saves it to the local Media table."""
@@ -179,11 +231,18 @@ class ArticleAutomationEngine:
 
     def log_notification(self, title: str, message: str, type: str = "info", link: str = None):
         """Logs a notification to the AdminNotification table."""
-        notif = models.AdminNotification(
-            title=title,
-            message=message,
-            type=type,
-            link=link
-        )
-        self.db.add(notif)
-        self.db.commit()
+        try:
+            notif = models.AdminNotification(
+                title=title,
+                message=message,
+                type=type,
+                link=link
+            )
+            self.db.add(notif)
+            self.db.commit()
+        except Exception as e:
+            print(f"Could not log notification: {e}")
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
