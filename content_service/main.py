@@ -86,6 +86,10 @@ async def shutdown_event():
     # Clean shutdown
     automation_scheduler.shutdown()
 
+@app.get("/")
+def read_root():
+    return {"status": "online", "service": "RelayPost Content Service", "version": "1.0.0"}
+
 # --- PUBLIC ENDPOINTS ---
 
 @app.get("/public/articles/search", response_model=List[schemas.ArticleResponse])

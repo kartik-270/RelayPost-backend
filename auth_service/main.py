@@ -105,6 +105,10 @@ def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):
         print(f"Token verification failed: {e}")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid Google token: {str(e)}")
 
+@app.get("/")
+def read_root():
+    return {"status": "online", "service": "RelayPost Auth Service", "version": "1.0.0"}
+
 @app.get("/users/me", response_model=schemas.UserResponse)
 def read_users_me(current_user: models.User = Depends(get_current_active_user)):
     return current_user
