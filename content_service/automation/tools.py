@@ -53,14 +53,19 @@ class GeminiTool:
         else:
             self.model = None
 
-    async def generate_structured(self, prompt: str, max_retries: int = 3):
+    async def generate_structured(self, prompt: str, temperature: float = 0.7, top_p: float = 0.95, max_retries: int = 3):
         import asyncio
         if not self.model:
             raise Exception("Gemini API key missing")
         
+        generation_config = {
+            "temperature": temperature,
+            "top_p": top_p,
+        }
+        
         for attempt in range(max_retries):
             try:
-                response = await self.model.generate_content_async(prompt)
+                response = await self.model.generate_content_async(prompt, generation_config=generation_config)
                 text = response.text
                 if "```json" in text:
                     text = text.split("```json")[1].split("```")[0].strip()

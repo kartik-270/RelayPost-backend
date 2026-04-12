@@ -34,7 +34,7 @@ class ArticleAutomationEngine:
                 categories=", ".join(categories),
                 existing_topics=", ".join(existing_topics) if existing_topics else "None"
             )
-            brainstorm_result = await self.gemini.generate_structured(brainstorm_prompt)
+            brainstorm_result = await self.gemini.generate_structured(brainstorm_prompt, temperature=0.9)
             topics = brainstorm_result.get("topics", [])[:batch_size]
             
             for topic_info in topics:
@@ -61,11 +61,11 @@ class ArticleAutomationEngine:
             
             # 3. Content Generation (Gemini)
             gen_prompt = CONTENT_GENERATION_PROMPT.format(research_data=str(research_data))
-            article_data = await self.gemini.generate_structured(gen_prompt)
+            article_data = await self.gemini.generate_structured(gen_prompt, temperature=0.7)
             
             # 4. SEO & GEO Optimization
             seo_prompt = SEO_OPTIMIZATION_PROMPT.format(article_json=str(article_data))
-            final_article_data = await self.gemini.generate_structured(seo_prompt)
+            final_article_data = await self.gemini.generate_structured(seo_prompt, temperature=0.5)
             
             # Ensure required fields and fallbacks
             final_article_data["status"] = models.ArticleStatus.DRAFT
