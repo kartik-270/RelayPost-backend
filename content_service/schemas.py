@@ -9,17 +9,21 @@ class CategoryBase(BaseModel):
     name: str
     slug: str
     description: Optional[str] = None
+    image_url: Optional[str] = None
 
 class CategoryResponse(CategoryBase):
     id: UUID
+    article_count: int = 0
     class Config:
         from_attributes = True
 
 class KeywordBase(BaseModel):
     tag: str
+    description: Optional[str] = None
 
 class KeywordResponse(KeywordBase):
     id: UUID
+    article_count: int = 0
     class Config:
         from_attributes = True
 
@@ -103,14 +107,25 @@ class ArticlePlacementUpdate(BaseModel):
 class ArticleResponse(ArticleBase):
     id: UUID
     author_id: UUID
+    category_id: Optional[UUID] = None
     category_name: Optional[str] = None
     scheduled_at: Optional[datetime] = None
     published_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
+
 
     class Config:
         from_attributes = True
+
+class PaginatedArticleResponse(BaseModel):
+    items: List[ArticleResponse]
+    total: int
+    page: int
+    size: int
+    pages: int
+
 
 # -- Media --
 class MediaResponse(BaseModel):
@@ -252,5 +267,23 @@ class AdminNotificationResponse(AdminNotificationBase):
     is_read: bool
     created_at: datetime
     
+    class Config:
+        from_attributes = True
+
+# -- Discovery & Newsletter --
+class NewsletterCreate(BaseModel):
+    email: str
+
+class FollowToggle(BaseModel):
+    user_id: str
+    target_id: UUID
+    target_type: str # "category" or "keyword"
+
+class FollowResponse(BaseModel):
+    id: UUID
+    user_id: str
+    target_id: UUID
+    target_type: str
+    created_at: datetime
     class Config:
         from_attributes = True

@@ -21,6 +21,16 @@ class AutomationScheduler:
         finally:
             db.close()
 
+    async def _cleanup_deleted_articles(self):
+        """Delete articles that have been in trash for > 30 days."""
+        db: Session = SessionLocal()
+        try:
+            from crud import permanently_delete_old_articles
+            permanently_delete_old_articles(db)
+        finally:
+            db.close()
+
+
     def start(self):
         """Starts the scheduler."""
         print("Starting Automation Scheduler...")
@@ -31,10 +41,17 @@ class AutomationScheduler:
             id="article_automation_job",
             replace_existing=True
         )
-        # Optional: Run immediately if needed for testing (uncomment if desired)
-        # self.scheduler.add_job(self._run_task, 'date', id="initial_run_job")
         
+        # Run cleanup once a day at midnight
+        self.scheduler.add_job(
+            self._cleanup_deleted_articles,
+            CronTrigger(hour=0, minute=0),
+            id="article_cleanup_job",
+            replace_existing=True
+        )
+
         self.scheduler.start()
+
 
     def shutdown(self):
         """Stops the scheduler."""

@@ -5,10 +5,11 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Response, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Response, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 import uuid
 from typing import List, Optional
 
@@ -152,6 +153,28 @@ def toggle_like(article_id: uuid.UUID, db: Session = Depends(get_db), current_us
 def get_public_categories(db: Session = Depends(get_db)):
     return crud.get_categories(db)
 
+@app.get("/public/homepage/category-sections")
+def get_homepage_category_sections(limit: int = 10, db: Session = Depends(get_db)):
+    return crud.get_homepage_category_articles(db, limit=limit)
+
+@app.get("/public/keywords", response_model=List[schemas.KeywordResponse])
+def get_public_keywords(limit: Optional[int] = None, db: Session = Depends(get_db)):
+    return crud.get_keywords(db, limit=limit)
+
+@app.post("/public/newsletter/subscribe")
+def subscribe_newsletter(sub: schemas.NewsletterCreate, db: Session = Depends(get_db)):
+    crud.subscribe_newsletter(db, sub.email)
+    return {"message": "Subscribed successfully"}
+
+@app.post("/public/follow/toggle", response_model=Optional[schemas.FollowResponse])
+def toggle_follow(follow: schemas.FollowToggle, db: Session = Depends(get_db)):
+    return crud.toggle_follow(db, follow)
+
+@app.get("/public/follows/{user_id}", response_model=List[schemas.FollowResponse])
+def get_user_follows(user_id: str, db: Session = Depends(get_db)):
+    return crud.get_user_follows(db, user_id)
+
+
 # --- PROTECTED ADMIN/PUBLISHER ENDPOINTS ---
 
 @app.get("/admin/categories", response_model=List[schemas.CategoryResponse])
@@ -168,7 +191,8 @@ def create_keyword(keyword: schemas.KeywordBase, db: Session = Depends(get_db), 
 
 @app.get("/admin/keywords", response_model=List[schemas.KeywordResponse])
 def get_all_keywords(db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
-    return crud.get_keywords(db)
+    return crud.get_admin_keywords(db)
+
 
 # --- MEDIA ENDPOINTS ---
 
@@ -356,9 +380,46 @@ def create_article(article: schemas.ArticleCreate, db: Session = Depends(get_db)
     article.author_id = current_user.user_id
     return crud.create_article(db=db, article=article)
 
-@app.get("/admin/articles", response_model=List[schemas.ArticleResponse])
-def get_all_articles(skip: int = 0, limit: int = 50, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
-    return crud.get_articles(db, skip=skip, limit=limit)
+@app.get("/admin/articles", response_model=schemas.PaginatedArticleResponse)
+def get_all_articles(
+    page: int = 1, 
+    size: int = 25, 
+    category_ids: Optional[List[uuid.UUID]] = Query(None),
+    keywords: Optional[List[str]] = Query(None),
+    db: Session = Depends(get_db), 
+    current_user: TokenData = Depends(get_current_publisher)
+):
+    skip = (page - 1) * size
+    items, total = crud.get_articles(
+        db, 
+        skip=skip, 
+        limit=size, 
+        include_deleted=True, 
+        category_ids=category_ids, 
+        keywords=keywords
+    )
+    pages = (total + size - 1) // size
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "size": size,
+        "pages": pages
+    }
+
+@app.get("/public/articles/keyword/{tag}", response_model=schemas.PaginatedArticleResponse)
+def get_articles_by_keyword(tag: str, page: int = 1, size: int = 20, db: Session = Depends(get_db)):
+    skip = (page - 1) * size
+    items, total = crud.get_articles_by_keyword(db, tag=tag, skip=skip, limit=size)
+    pages = (total + size - 1) // size
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "size": size,
+        "pages": pages
+    }
+
 
 @app.get("/admin/articles/{article_id}", response_model=schemas.ArticleResponse)
 def get_admin_article(article_id: uuid.UUID, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
@@ -389,6 +450,14 @@ def archive_article(article_id: uuid.UUID, db: Session = Depends(get_db), curren
     crud.delete_article(db, db_article)
     return {"message": "Article archived successfully"}
 
+@app.post("/admin/articles/{article_id}/restore")
+def restore_article(article_id: uuid.UUID, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_publisher)):
+    db_article = crud.restore_article(db, article_id=article_id)
+    if not db_article:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return {"message": "Article restored successfully"}
+
+
 # --- CATEGORY ADMIN ---
 
 @app.put("/admin/categories/{category_id}", response_model=schemas.CategoryResponse)
@@ -404,6 +473,7 @@ def delete_category(category_id: uuid.UUID, db: Session = Depends(get_db), curre
     if not success:
         raise HTTPException(status_code=404, detail="Category not found")
     return {"message": "Category deleted"}
+
 
 # --- DASHBOARD ADMIN ---
 

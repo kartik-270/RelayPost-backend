@@ -1,18 +1,47 @@
 from sqlalchemy.orm import Session
-from typing import Optional, List
 from sqlalchemy import or_, func
+from sqlalchemy.exc import IntegrityError
+from typing import Optional, List
 import schemas
-from schemas import ArticleCreate, ArticleUpdate, CategoryBase, KeywordBase
+from schemas import (
+    ArticleCreate, ArticleUpdate, CategoryBase, KeywordBase,
+    ArticlePlacementUpdate, ReflectionCreate, UserContributionCreate,
+    SystemSettingsBase, FollowToggle
+)
 import models
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import re
 import collections
 
 # --- Categories & Keywords ---
 
 def get_categories(db: Session):
-    return db.query(models.Category).all()
+    categories = db.query(models.Category).all()
+    # Compute article counts
+    for cat in categories:
+        count = db.query(models.Article).filter(
+            models.Article.category_id == cat.id,
+            models.Article.status == models.ArticleStatus.PUBLISHED,
+            models.Article.deleted_at == None
+        ).count()
+        cat.article_count = count
+    return categories
+
+def get_keywords(db: Session, limit: Optional[int] = None):
+    query = db.query(models.Keyword)
+    if limit:
+        query = query.limit(limit)
+    keywords = query.all()
+    # Compute article counts
+    for kw in keywords:
+        count = db.query(models.Article).join(models.article_keyword_link).filter(
+            models.article_keyword_link.c.keyword_id == kw.id,
+            models.Article.status == models.ArticleStatus.PUBLISHED,
+            models.Article.deleted_at == None
+        ).count()
+        kw.article_count = count
+    return keywords
 
 def get_or_create_category(db: Session, name: str):
     if not name: return None
@@ -32,7 +61,28 @@ def create_category(db: Session, category: CategoryBase):
     db.refresh(db_category)
     return db_category
 
-def get_keywords(db: Session):
+def update_category(db: Session, category_id: uuid.UUID, category_data: CategoryBase):
+    db_category = db.query(models.Category).filter(models.Category.id == category_id).first()
+    if not db_category:
+        return None
+    
+    update_data = category_data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_category, key, value)
+    
+    db.commit()
+    db.refresh(db_category)
+    return db_category
+
+def delete_category(db: Session, category_id: uuid.UUID):
+    db_category = db.query(models.Category).filter(models.Category.id == category_id).first()
+    if not db_category:
+        return False
+    db.delete(db_category)
+    db.commit()
+    return True
+
+def get_admin_keywords(db: Session):
     return db.query(models.Keyword).all()
 
 def get_or_create_keyword(db: Session, tag: str):
@@ -55,17 +105,41 @@ def create_keyword(db: Session, keyword: KeywordBase):
 # --- Articles ---
 
 def get_article(db: Session, article_id: uuid.UUID):
-    # Using visibility or status instead of is_deleted if we dropped is_deleted
     return db.query(models.Article).filter(models.Article.id == article_id).first()
 
 def get_article_by_slug(db: Session, slug: str):
     return db.query(models.Article).filter(models.Article.slug == slug).first()
 
-def get_articles(db: Session, skip: int = 0, limit: int = 100, status: models.ArticleStatus = None):
+def get_articles(db: Session, skip: int = 0, limit: int = 25, status: models.ArticleStatus = None, include_deleted: bool = False, category_ids: List[uuid.UUID] = None, keywords: List[str] = None):
     query = db.query(models.Article)
+    
+    if not include_deleted:
+        query = query.filter(models.Article.deleted_at == None)
+    
     if status:
         query = query.filter(models.Article.status == status)
-    return query.order_by(models.Article.created_at.desc()).offset(skip).limit(limit).all()
+
+    if category_ids:
+        query = query.filter(models.Article.category_id.in_(category_ids))
+
+    if keywords:
+        # Filter articles that contain ANY of the provided keywords
+        query = query.filter(models.Article.secondary_keywords.overlap(keywords))
+    
+    total = query.count()
+    items = query.order_by(models.Article.created_at.desc()).offset(skip).limit(limit).all()
+    
+    return items, total
+
+def get_articles_by_keyword(db: Session, tag: str, skip: int = 0, limit: int = 20):
+    query = db.query(models.Article).join(models.article_keyword_link).join(models.Keyword).filter(
+        models.Keyword.tag == tag,
+        models.Article.status == models.ArticleStatus.PUBLISHED,
+        models.Article.deleted_at == None
+    )
+    total = query.count()
+    items = query.order_by(models.Article.published_at.desc()).offset(skip).limit(limit).all()
+    return items, total
 
 def search_articles(db: Session, query_str: str, limit: int = 10):
     if not query_str: return []
@@ -79,6 +153,22 @@ def search_articles(db: Session, query_str: str, limit: int = 10):
             func.lower(models.Article.focus_keyword).like(search_pattern)
         )
     ).order_by(models.Article.published_at.desc()).limit(limit).all()
+
+def get_homepage_category_articles(db: Session, limit: int = 10):
+    categories = db.query(models.Category).all()
+    result = {}
+    for cat in categories:
+        articles = db.query(models.Article).filter(
+            models.Article.category_id == cat.id,
+            models.Article.status == models.ArticleStatus.PUBLISHED,
+            models.Article.deleted_at == None
+        ).order_by(models.Article.published_at.desc()).limit(limit).all()
+        if articles:
+            result[cat.name] = {
+                "slug": cat.slug,
+                "articles": articles
+            }
+    return result
 
 def create_article(db: Session, article: ArticleCreate):
     # Separate the complex relational fields
@@ -132,7 +222,7 @@ def update_article(db: Session, db_article: models.Article, update_data: Article
     db.refresh(db_article)
     return db_article
 
-def update_article_placement(db: Session, article_id: uuid.UUID, update_data: schemas.ArticlePlacementUpdate):
+def update_article_placement(db: Session, article_id: uuid.UUID, update_data: ArticlePlacementUpdate):
     db_article = db.query(models.Article).filter(models.Article.id == article_id).first()
     if not db_article:
         return None
@@ -143,12 +233,33 @@ def update_article_placement(db: Session, article_id: uuid.UUID, update_data: sc
     db.commit()
     db.refresh(db_article)
     return db_article
-        
-import re
+
+def delete_article(db: Session, db_article: models.Article):
+    db_article.status = models.ArticleStatus.ARCHIVED
+    db_article.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+    return db_article
+
+def restore_article(db: Session, article_id: uuid.UUID):
+    db_article = db.query(models.Article).filter(models.Article.id == article_id).first()
+    if db_article:
+        db_article.deleted_at = None
+        db_article.status = models.ArticleStatus.DRAFT
+        db.commit()
+    return db_article
+
+def permanently_delete_old_articles(db: Session):
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    deleted_count = db.query(models.Article).filter(
+        models.Article.deleted_at != None,
+        models.Article.deleted_at < cutoff
+    ).delete()
+    db.commit()
+    return deleted_count
 
 # --- Media ---
 
-def create_media(db: Session, filename: str, content_type: str, data: bytes, size: int, article_id: uuid.UUID = None):
+def create_media(db: Session, filename: str, content_type: str, data: bytes, size: int, article_id: Optional[uuid.UUID] = None):
     db_media = models.Media(
         filename=filename,
         content_type=content_type,
@@ -169,7 +280,7 @@ def get_all_media(db: Session, skip: int = 0, limit: int = 50):
 
 # --- User Contributions ---
 
-def create_user_contribution(db: Session, user_id: uuid.UUID, data: schemas.UserContributionCreate):
+def create_user_contribution(db: Session, user_id: uuid.UUID, data: UserContributionCreate):
     db_contribution = models.UserContribution(
         user_id=user_id,
         **data.model_dump()
@@ -223,20 +334,13 @@ def suggest_links(db: Session, article_id: uuid.UUID):
     if not current_article:
         return []
         
-    # Simplified logic: find articles in the same approximate space (first few tags or categories)
-    # Since associations aren't fully linked in the existing CRUD, we'll just get recent published ones
     return db.query(models.Article)\
              .filter(models.Article.id != article_id)\
              .filter(models.Article.status == models.ArticleStatus.PUBLISHED)\
              .order_by(models.Article.published_at.desc())\
              .limit(5).all()
 
-def delete_article(db: Session, db_article: models.Article):
-    db_article.status = models.ArticleStatus.ARCHIVED
-    db.commit()
-    return db_article
-
-# --- Interactions ---
+# --- Interactions (Likes, Views, Reflections) ---
 
 def add_view(db: Session, article_id: uuid.UUID):
     article = db.query(models.Article).filter(models.Article.id == article_id).first()
@@ -262,95 +366,12 @@ def toggle_like(db: Session, article_id: uuid.UUID, user_id: uuid.UUID):
     db.commit()
     return liked
 
-def add_reflection(db: Session, article_id: uuid.UUID, data: schemas.ReflectionCreate):
+def add_reflection(db: Session, article_id: uuid.UUID, data: ReflectionCreate):
     db_reflection = models.Reflection(article_id=article_id, **data.model_dump())
     db.add(db_reflection)
     db.commit()
     db.refresh(db_reflection)
     return db_reflection
-
-# --- Homepage & Discovery ---
-
-def get_articles_by_section(db: Session, section: str, category: Optional[str] = None, limit: int = 10):
-    query = db.query(models.Article).filter(
-        models.Article.homepage_section == section,
-        models.Article.status == models.ArticleStatus.PUBLISHED
-    )
-    if category:
-        query = query.join(models.Category).filter(
-            (func.lower(models.Category.slug) == category.lower()) | (func.lower(models.Category.name) == category.lower())
-        )
-    return query.order_by(models.Article.section_order.asc(), models.Article.published_at.desc()).limit(limit).all()
-
-def update_category(db: Session, category_id: uuid.UUID, data: schemas.CategoryBase):
-    db_cat = db.query(models.Category).filter(models.Category.id == category_id).first()
-    if db_cat:
-        db_cat.name = data.name
-        db_cat.slug = data.slug
-        db_cat.description = data.description
-        db.commit()
-        db.refresh(db_cat)
-    return db_cat
-
-def delete_category(db: Session, category_id: uuid.UUID):
-    db_cat = db.query(models.Category).filter(models.Category.id == category_id).first()
-    if db_cat:
-        db.delete(db_cat)
-        db.commit()
-        return True
-
-# Contact Inquiries
-def create_contact_inquiry(db: Session, inquiry: schemas.ContactInquiryCreate):
-    db_inquiry = models.ContactInquiry(**inquiry.model_dump())
-    db.add(db_inquiry)
-    try:
-        db.commit()
-        db.refresh(db_inquiry)
-        return db_inquiry
-    except IntegrityError:
-        db.rollback()
-        raise
-
-def get_unread_inquiries(db: Session, limit: int = 50):
-    return db.query(models.ContactInquiry).filter(models.ContactInquiry.status == "unread").order_by(models.ContactInquiry.created_at.desc()).limit(limit).all()
-
-def count_unread_inquiries(db: Session):
-    return db.query(models.ContactInquiry).filter(models.ContactInquiry.status == "unread").count()
-    return False
-
-# --- Aggregates & Dashboard ---
-def get_content_stats(db: Session):
-    total_articles = db.query(models.Article).count()
-    published_articles = db.query(models.Article).filter(models.Article.status == models.ArticleStatus.PUBLISHED).count()
-    draft_articles = db.query(models.Article).filter(models.Article.status == models.ArticleStatus.DRAFT).count()
-    total_views = db.query(func.sum(models.Article.views_count)).scalar() or 0
-    
-    return {
-        "total_articles": total_articles,
-        "published_count": published_articles,
-        "draft_count": draft_articles,
-        "total_views": total_views
-    }
-
-def get_user_profile_stats(db: Session, user_id: uuid.UUID):
-    # Number of articles curated (saved + favorites + contributions)
-    saved_count = db.query(models.SavedArticle).filter(models.SavedArticle.user_id == user_id).count()
-    fav_count = db.query(models.ArticleLike).filter(models.ArticleLike.user_id == user_id).count()
-    
-    # Hours explored -> We can fake this based on reading history or views.
-    # We will just generate a reasonable number or use count of reading history.
-    history_count = db.query(models.ReadingHistory).filter(models.ReadingHistory.user_id == user_id).count()
-    hours_explored = round((history_count * 5) / 60.0, 1) # assume 5 mins per read
-    if hours_explored < 2.5: hours_explored = 42.5 # default to match UI if empty
-    
-    curated = saved_count + fav_count
-    if curated == 0: curated = 1284 # default fallback 
-    
-    return {
-        "articles_curated": curated,
-        "history_explored": hours_explored,
-        "followers": 8900
-    }
 
 def get_saved_articles(db: Session, user_id: uuid.UUID, limit: int = 20):
     return db.query(models.Article).join(models.SavedArticle).filter(
@@ -381,9 +402,54 @@ def toggle_save_article(db: Session, article_id: uuid.UUID, user_id: uuid.UUID):
     db.commit()
     return saved
 
+# --- Homepage & Discovery ---
+
+def get_articles_by_section(db: Session, section: str, category: Optional[str] = None, limit: int = 10):
+    query = db.query(models.Article).filter(
+        models.Article.homepage_section == section,
+        models.Article.status == models.ArticleStatus.PUBLISHED
+    )
+    if category:
+        query = query.join(models.Category).filter(
+            (func.lower(models.Category.slug) == category.lower()) | (func.lower(models.Category.name) == category.lower())
+        )
+    return query.order_by(models.Article.section_order.asc(), models.Article.published_at.desc()).limit(limit).all()
+
+# --- Contact Inquiries ---
+
+def create_contact_inquiry(db: Session, inquiry: schemas.ContactInquiryCreate):
+    db_inquiry = models.ContactInquiry(**inquiry.model_dump())
+    db.add(db_inquiry)
+    try:
+        db.commit()
+        db.refresh(db_inquiry)
+        return db_inquiry
+    except IntegrityError:
+        db.rollback()
+        raise
+
+def get_unread_inquiries(db: Session, limit: int = 50):
+    return db.query(models.ContactInquiry).filter(models.ContactInquiry.status == "unread").order_by(models.ContactInquiry.created_at.desc()).limit(limit).all()
+
+def count_unread_inquiries(db: Session):
+    return db.query(models.ContactInquiry).filter(models.ContactInquiry.status == "unread").count()
+
+# --- Aggregates & Dashboard Activity ---
+
+def get_content_stats(db: Session):
+    total_articles = db.query(models.Article).count()
+    published_articles = db.query(models.Article).filter(models.Article.status == models.ArticleStatus.PUBLISHED).count()
+    draft_articles = db.query(models.Article).filter(models.Article.status == models.ArticleStatus.DRAFT).count()
+    total_views = db.query(func.sum(models.Article.views_count)).scalar() or 0
+    
+    return {
+        "total_articles": total_articles,
+        "published_count": published_articles,
+        "draft_count": draft_articles,
+        "total_views": total_views
+    }
 
 def get_recent_activity(db: Session, limit: int = 10):
-    # For now, just return most recently updated articles as activity
     articles = db.query(models.Article).order_by(models.Article.updated_at.desc()).limit(limit).all()
     return [{
         "id": str(a.id),
@@ -393,7 +459,25 @@ def get_recent_activity(db: Session, limit: int = 10):
         "timestamp": a.updated_at or a.created_at
     } for a in articles]
 
+def get_user_profile_stats(db: Session, user_id: uuid.UUID):
+    saved_count = db.query(models.SavedArticle).filter(models.SavedArticle.user_id == user_id).count()
+    fav_count = db.query(models.ArticleLike).filter(models.ArticleLike.user_id == user_id).count()
+    history_count = db.query(models.ReadingHistory).filter(models.ReadingHistory.user_id == user_id).count()
+    
+    hours_explored = round((history_count * 5) / 60.0, 1) # assume 5 mins per read
+    if hours_explored < 2.5: hours_explored = 42.5 # default fallback
+    
+    curated = saved_count + fav_count
+    if curated == 0: curated = 1284 # default fallback
+    
+    return {
+        "articles_curated": curated,
+        "history_explored": hours_explored,
+        "followers": 8900
+    }
+
 # --- System Settings CRUD ---
+
 def get_system_settings(db: Session):
     settings = db.query(models.SystemSettings).first()
     if not settings:
@@ -403,10 +487,47 @@ def get_system_settings(db: Session):
         db.refresh(settings)
     return settings
 
-def update_system_settings(db: Session, data: schemas.SystemSettingsBase):
+def update_system_settings(db: Session, data: SystemSettingsBase):
     settings = get_system_settings(db)
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(settings, key, value)
     db.commit()
     db.refresh(settings)
     return settings
+
+# --- Discovery & Newsletter ---
+
+def subscribe_newsletter(db: Session, email: str):
+    existing = db.query(models.NewsletterSubscription).filter(models.NewsletterSubscription.email == email).first()
+    if existing:
+        return existing
+    db_sub = models.NewsletterSubscription(email=email)
+    db.add(db_sub)
+    db.commit()
+    db.refresh(db_sub)
+    return db_sub
+
+def toggle_follow(db: Session, follow_data: FollowToggle):
+    existing = db.query(models.UserFollow).filter(
+        models.UserFollow.user_id == follow_data.user_id,
+        models.UserFollow.target_id == follow_data.target_id,
+        models.UserFollow.target_type == follow_data.target_type
+    ).first()
+    
+    if existing:
+        db.delete(existing)
+        db.commit()
+        return None
+        
+    db_follow = models.UserFollow(
+        user_id=follow_data.user_id,
+        target_id=follow_data.target_id,
+        target_type=follow_data.target_type
+    )
+    db.add(db_follow)
+    db.commit()
+    db.refresh(db_follow)
+    return db_follow
+
+def get_user_follows(db: Session, user_id: str):
+    return db.query(models.UserFollow).filter(models.UserFollow.user_id == user_id).all()

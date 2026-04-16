@@ -18,6 +18,8 @@ class TemplateType(str, enum.Enum):
     NEWS = "news"
     TECH = "tech"
     SEO_BLOG = "seo_blog"
+    GUIDE = "guide"
+    TREND = "trend"
 
 class ThemeType(str, enum.Enum):
     STANDARD = "standard"
@@ -55,12 +57,14 @@ class Category(Base):
     name = Column(String, unique=True, index=True, nullable=False)
     slug = Column(String, unique=True, index=True, nullable=False)
     description = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
 
 class Keyword(Base):
     __tablename__ = "keywords"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     tag = Column(String, unique=True, index=True, nullable=False)
+    description = Column(String, nullable=True)
 
 class Article(Base):
     __tablename__ = "articles"
@@ -110,6 +114,8 @@ class Article(Base):
     published_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
 
     # Relationships
     category_id = Column(UUID(as_uuid=True), ForeignKey('categories.id'), nullable=True)
@@ -231,4 +237,20 @@ class AdminNotification(Base):
     link = Column(String, nullable=True) # Optional link to the related item
     is_read = Column(Boolean, default=False)
     
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class NewsletterSubscription(Base):
+    __tablename__ = "newsletter_subscriptions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class UserFollow(Base):
+    __tablename__ = "user_follows"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(String, index=True, nullable=False) # Client side identifier
+    target_id = Column(UUID(as_uuid=True), nullable=False) # Category or Keyword ID
+    target_type = Column(String, nullable=False) # "category" or "keyword"
     created_at = Column(DateTime(timezone=True), server_default=func.now())
