@@ -2,6 +2,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from database import SessionLocal, engine
 import os
 import asyncio
@@ -12,29 +13,50 @@ from automation.learning import SelfLearningEngine
 async def run_pipeline_task():
     """Top-level function to run the engine with a fresh DB session (Serialization-safe)."""
     db: Session = SessionLocal()
-    batch_size = int(os.getenv("AUTOMATION_BATCH_SIZE", "3"))
+    has_lock = db.execute(text("SELECT pg_try_advisory_lock(1001)")).scalar()
+    if not has_lock:
+        db.close()
+        return
+        
     try:
+        batch_size = int(os.getenv("AUTOMATION_BATCH_SIZE", "3"))
         engine = ArticleAutomationEngine(db)
         await engine.run_pipeline(batch_size=batch_size)
     finally:
+        db.execute(text("SELECT pg_advisory_unlock(1001)"))
+        db.commit()
         db.close()
 
 async def run_learning_loop_task():
     """Top-level function to run the learning loop (Serialization-safe)."""
     db: Session = SessionLocal()
+    has_lock = db.execute(text("SELECT pg_try_advisory_lock(1002)")).scalar()
+    if not has_lock:
+        db.close()
+        return
+        
     try:
         engine = SelfLearningEngine(db)
         await engine.analyze_and_update_prompt()
     finally:
+        db.execute(text("SELECT pg_advisory_unlock(1002)"))
+        db.commit()
         db.close()
 
 async def cleanup_deleted_articles_task():
     """Top-level function to clean up deleted articles (Serialization-safe)."""
     db: Session = SessionLocal()
+    has_lock = db.execute(text("SELECT pg_try_advisory_lock(1003)")).scalar()
+    if not has_lock:
+        db.close()
+        return
+        
     try:
         from crud import permanently_delete_old_articles
         permanently_delete_old_articles(db)
     finally:
+        db.execute(text("SELECT pg_advisory_unlock(1003)"))
+        db.commit()
         db.close()
 
 
