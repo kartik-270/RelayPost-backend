@@ -6,6 +6,7 @@ import os
 import asyncio
 
 from automation.engine import ArticleAutomationEngine
+from automation.learning import SelfLearningEngine
 
 class AutomationScheduler:
     def __init__(self):
@@ -18,6 +19,15 @@ class AutomationScheduler:
         try:
             engine = ArticleAutomationEngine(db)
             await engine.run_pipeline(batch_size=self.batch_size)
+        finally:
+            db.close()
+
+    async def _run_learning_loop(self):
+        """Internal method to run the self learning loop with a fresh DB session."""
+        db: Session = SessionLocal()
+        try:
+            engine = SelfLearningEngine(db)
+            await engine.analyze_and_update_prompt()
         finally:
             db.close()
 
@@ -50,7 +60,27 @@ class AutomationScheduler:
             replace_existing=True
         )
 
+        # Run Self-Learning loop once a day at 12:00 PM
+        self.scheduler.add_job(
+            self._run_learning_loop,
+            CronTrigger(hour=12, minute=0),
+            id="self_learning_job",
+            replace_existing=True
+        )
+
         self.scheduler.start()
+
+    def pause_automation(self):
+        """Pauses the article automation generation job."""
+        job = self.scheduler.get_job("article_automation_job")
+        if job:
+            job.pause()
+            
+    def resume_automation(self):
+        """Resumes the article automation generation job."""
+        job = self.scheduler.get_job("article_automation_job")
+        if job:
+            job.resume()
 
 
     def shutdown(self):

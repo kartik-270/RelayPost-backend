@@ -1,6 +1,6 @@
 import enum
 import uuid
-from sqlalchemy import Column, String, Boolean, Enum, DateTime, ForeignKey, Integer, Table, func, LargeBinary
+from sqlalchemy import Column, String, Boolean, Enum, DateTime, ForeignKey, Integer, Float, Table, func, LargeBinary
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import relationship
 from database import Base
@@ -254,3 +254,15 @@ class UserFollow(Base):
     target_id = Column(UUID(as_uuid=True), nullable=False) # Category or Keyword ID
     target_type = Column(String, nullable=False) # "category" or "keyword"
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class PromptVersion(Base):
+    __tablename__ = "prompt_versions"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    version = Column(String, unique=True, index=True, nullable=False)
+    score = Column(Float, nullable=True)
+    changes = Column(String, nullable=True)
+    topic_brainstorm_dynamic = Column(String, nullable=False)
+    content_generation_dynamic = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+

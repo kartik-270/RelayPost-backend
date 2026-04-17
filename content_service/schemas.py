@@ -287,3 +287,21 @@ class FollowResponse(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
+
+# -- Prompt Versions --
+class PromptVersionBase(BaseModel):
+    version: str
+    score: Optional[float] = None
+    changes: Optional[str] = None
+    topic_brainstorm_dynamic: str
+    content_generation_dynamic: str
+
+class PromptVersionCreate(PromptVersionBase):
+    pass
+
+class PromptVersionResponse(PromptVersionBase):
+    id: UUID
+    created_at: datetime
+    class Config:
+        from_attributes = True
+

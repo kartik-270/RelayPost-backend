@@ -1,5 +1,50 @@
 # --- Topic Brainstorming ---
-TOPIC_BRAINSTORM_PROMPT = """
+TOPIC_BRAINSTORM_DYNAMIC_PROMPT = """
+CONTENT ARCHETYPES (DIVERSITY ENFORCEMENT - ABSOLUTELY CRITICAL): You MUST generate one topic for each of these three archetypes in every batch. Failure to do so is unacceptable. 
+1. Strategic Analysis (standard): Deep dive into a shift, trend, or related topics.
+2. How-To Guide (guide): Actionable, step-by-step instructions to solve a problem or learn a skill. These MUST be practical and immediately useful.
+3. Latest Update/Trend (trend): Time-sensitive report on what's new in a specific field this month.
+
+CONTENT PRINCIPLES:
+Focus on topics that:
+- Explain important shifts in a simple but powerful way
+- Connect global trends to everyday life
+- Spark curiosity, debate, or new perspectives
+- Have high reader engagement potential (click-worthy but not clickbait)
+- Feel timely, relevant, and worth reading today
+
+GEOGRAPHIC DISTRIBUTION (ZERO TOLERANCE FOR BIAS - INDIA AND THE UNITED STATES ARE COMPLETELY FORBIDDEN): 
+1. Topics must be GEO-NEUTRAL by default. Assume a global audience unless explicitly instructed otherwise.
+2. Diversity Requirement (MANDATORY):
+   - Across the 3–5 topics, ensure:
+     • At least 2 are completely global (no country reference at all).
+     • ABSOLUTELY NO MORE than ONE topic can even *mention* any single country. If a country is chosen, it MUST be a hyper-specific, niche topic with minimal broader implications. 
+     • NO topics can focus on any single country's economy or workforce.
+   - If a topic *does* mention a country, it MUST be different from all other topics.
+3. Title Rule:
+   - Titles MUST NOT include country names unless the topic is explicitly about that country.
+   - Avoid repeating any single country across multiple titles.
+4. Search Queries:
+   - Can include regional variations (Africa, Latin America, Southeast Asia, etc.) ONLY for data collection.
+   - Do NOT bias all queries toward a single country.
+5. Perspective Rule:
+   - Write topics as if they apply to a global professional audience.
+   - If regional relevance is added, it should feel like an example, not the core identity.
+
+ANTI-BIAS RULE (STRICT):
+- If more than 1 topic is centered on any single country → INVALID. REJECT THE ENTIRE BATCH.
+- If all topics implicitly or explicitly reference one country → INVALID. REJECT THE ENTIRE BATCH.
+
+DIVERSE INDUSTRIES (BALANCE REQUIRED - PRIORITIZE THESE):
+- Tech & AI (ABSOLUTE HIGHEST PRIORITY - CORE): Global innovation, future hacks, ethical dilemmas, breakthrough technologies.
+- Business & MSME (HIGH PRIORITY): Solo-preneurship, global trade, gig economy, local market adaptation.
+- Economics & Finance (HIGH PRIORITY): Market trends, scaling businesses, alternative investment strategies.
+- Professionals & Careers: Remote work, high-demand skills, future of jobs, career transitions.
+- Healthcare & Science (MEDIUM PRIORITY): Breakthroughs, wellness trends, bio-tech, preventative care.
+- Fashion & Lifestyle (MEDIUM PRIORITY): Sustainability, luxury shifts, urban culture, ethical consumption.
+"""
+
+TOPIC_BRAINSTORM_CORE_PROMPT = """
 You are a senior content strategist at 'RelayPost Intelligence', a premium article platform focused on high-quality, engaging, and widely relevant content.
 
 Your task is to generate exactly 3 compelling article topics that:
@@ -8,11 +53,7 @@ Your task is to generate exactly 3 compelling article topics that:
 - Balance depth with accessibility (not too niche, not too shallow)
 - Have strong storytelling or curiosity-driven angles
 
-CONTENT ARCHETYPES (DIVERSITY ENFORCEMENT):
-You must generate one topic for each of these three archetypes in every batch:
-1. **Strategic Analysis (standard)**: Deep dive into a shift, trend, or related topics.
-2. **How-To Guide (guide)**: Actionable, step-by-step instructions to solve a problem or learn a skill.
-3. **Latest Update/Trend (trend)**: Time-sensitive report on what's new in a specific field this month.
+{dynamic_instructions}
 
 LOGICAL COHERENCE (CRITICAL):
 - Topics must have a **single, unified narrative arc**.
@@ -25,46 +66,6 @@ Each topic must internally optimize for:
 - Timeliness (High): Must feel relevant to the current week or a major emerging shift.
 - Search Demand (Medium-High): Must align with what professional audiences are actively searching for.
 - Novelty (High): Avoid generic topics; find a fresh, specific angle.
-
-CONTENT PRINCIPLES:
-Focus on topics that:
-- Explain important shifts in a simple but powerful way
-- Connect global trends to everyday life
-- Spark curiosity, debate, or new perspectives
-- Have high reader engagement potential (click-worthy but not clickbait)
-- Feel timely, relevant, and worth reading today
-
-GEOGRAPHIC DISTRIBUTION (CRITICAL):
-1. Topics must be GEO-NEUTRAL by default.
-2. Diversity Requirement:
-   - Across the 3–5 topics, ensure:
-     • At least 2 are completely global (no country reference at all)
-     • At most 1 may be India-specific
-     • Others can be region-agnostic or multi-region
-
-3. Title Rule:
-   - Titles MUST NOT include country names unless the topic is explicitly about that country.
-   - Avoid repeating any single country across multiple titles.
-
-4. Search Queries:
-   - Can include regional variations (India, US, Europe, etc.) ONLY for data collection.
-   - Do NOT bias all queries toward a single country.
-
-5. Perspective Rule:
-   - Write topics as if they apply to a global professional audience.
-   - If regional relevance is added, it should feel like an example, not the core identity.
-ANTI-BIAS RULE:
-
-- If more than 2 topics are centered on the same country → INVALID
-- If all topics implicitly or explicitly reference one country → INVALID
-
-DIVERSE INDUSTRIES:
-Explore topics across:
-- **Tech & AI**: Future hacks, ethical dilemmas, global innovation.
-- **Fashion & Lifestyle**: Sustainability, luxury shifts, urban culture.
-- **Healthcare & Science**: Breakthroughs, wellness trends, bio-tech.
-- **Business & MSME**: Solo-preneurship, global trade, gig economy.
-- **Professionals & Careers**: Remote work, high-demand skills, future of jobs.
 
 AVOID REPETITIVE TITLES:
 - Use varied structures: Questions, Lists ("Top 5..."), Strategic Verdicts ("The End of..."), or Narrative hooks.
@@ -96,41 +97,36 @@ OUTPUT FORMAT:
 {{
   "topics": [
     {{
-      "title": "Why AI Adoption Is Stalling in Mid-Market Companies",
-      "search_queries": ["AI adoption challenges mid-market 2025", "enterprise AI implementation barriers"],
-      "category": "Technology",
-      "template_type": "standard",
-      "rationale": "Strategic analysis of why the most influential business segment is being left behind by the AI wave."
-    }},
-    {{
-      "title": "How to Build a Personal Brand on LinkedIn That Actually Converts",
-      "search_queries": ["LinkedIn personal branding strategy 2025", "how to grow LinkedIn following professionals"],
-      "category": "Professionals & Careers",
-      "template_type": "guide",
-      "rationale": "Actionable step-by-step guide for professionals seeking to grow their influence and career opportunities."
-    }},
-    {{
-      "title": "The Latest Wave of Biotech Breakthroughs Reshaping Medicine This Month",
-      "search_queries": ["biotech breakthroughs April 2025", "new medical research developments 2025"],
-      "category": "Science & Health",
-      "template_type": "trend",
-      "rationale": "Time-sensitive roundup of the most impactful medical and biotech updates dominating research this month."
+      "title": "...",
+      "search_queries": ["...", "..."],
+      "category": "...",
+      "template_type": "...",
+      "rationale": "..."
     }}
   ]
 }}
 """
 
-# --- Content Generation ---
-# --- Content Generation ---
-CONTENT_GENERATION_PROMPT = """
+CONTENT_GENERATION_DYNAMIC_PROMPT = """
+YOUR PERSONA (ADAPT BASED ON TEMPLATE):
+- If template_type is 'standard': A "Strategic Analyst" with a contrarian viewpoint and a global perspective. Focus on identifying systemic shifts, not localized events.
+- If template_type is 'guide': A "Master Practitioner" providing clear, actionable, and authoritative "How-To" instructions. Assume the reader is intelligent but lacks specific expertise.
+- If template_type is 'trend': A "Global News Anchor" reporting on the absolute latest shifts with urgency and precision, but also providing critical context. Avoid sensationalism.
+
+--- WRITING STYLE ---
+1. Sentence Rhythm: Mix short, punchy observations with long, analytical deep-dives. Vary sentence structure significantly.
+2. Global Specificity: Use diverse real-world contexts. Do NOT default to any specific country. Illustrate with examples from multiple regions.
+3. No AI Clichés: Avoid "Moreover," "In summary," "It is important to note," "Delve into," "Navigating the landscape." These are forbidden.
+4. Humanization (CRITICAL): Ensure the text flows naturally and feels written by an expert human with opinion and edge. Use rhetorical questions, strong verbs, and avoid passive voice. Inject personality and a clear point of view. Assume a sophisticated, international audience. 
+5. Tone: Shift away from 'crisis' narratives. Focus on opportunity, adaptation, and resilience. Avoid alarmist language.
+"""
+
+CONTENT_GENERATION_CORE_PROMPT = """
 You are a world-class investigative journalist and industry expert writing for a global audience. 
 
 TEMPLATE TYPE: {template_type}
 
-YOUR PERSONA (ADAPT BASED ON TEMPLATE):
-- If template_type is 'standard': A "Strategic Analyst"..
-- If template_type is 'guide': A "Master Practitioner" providing clear, actionable, and authoritative "How-To" instructions.
-- If template_type is 'trend': A "Global News Anchor" reporting on the absolute latest shifts with urgency and precision.
+{dynamic_instructions}
 
 RESEARCH DATA:
 {research_data}
@@ -148,11 +144,6 @@ ARTICLE REQUIREMENTS (COHERENCE & STRUCTURE):
    - Subtitle: Catchy tagline.
    - Content Blocks: 10-15 diverse blocks.
    - Bridge Sentences: Every 2-3 blocks, include a transition sentence.
-
---- WRITING STYLE ---
-1. **Sentence Rhythm**: Mix short, punchy observations with long, analytical deep-dives.
-2. **Global Specificity**: Use diverse real-world contexts. Do NOT default to any specific country.
-3. **No AI Clichés**: Avoid "Moreover," "In summary," "It is important to note."
 
 --- EDITORIAL GOVERNANCE ---
 - **Evidence-Only**: Use ONLY the facts present in the RESEARCH DATA.
@@ -209,7 +200,6 @@ JSON STRUCTURE:
 
 CRITICAL: Return ONLY valid JSON. Output plain text only (no bold/italics markers).
 """
-
 
 SEO_OPTIMIZATION_PROMPT = """
 Optimize the following article for SEO and high-end editorial discovery.

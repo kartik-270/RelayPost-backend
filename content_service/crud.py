@@ -154,6 +154,7 @@ def search_articles(db: Session, query_str: str, limit: int = 10):
         )
     ).order_by(models.Article.published_at.desc()).limit(limit).all()
 
+
 def get_homepage_category_articles(db: Session, limit: int = 10):
     categories = db.query(models.Category).all()
     result = {}
@@ -531,3 +532,15 @@ def toggle_follow(db: Session, follow_data: FollowToggle):
 
 def get_user_follows(db: Session, user_id: str):
     return db.query(models.UserFollow).filter(models.UserFollow.user_id == user_id).all()
+
+# --- Prompt Versions ---
+def get_latest_prompt_version(db: Session):
+    return db.query(models.PromptVersion).order_by(models.PromptVersion.created_at.desc()).first()
+
+def create_prompt_version(db: Session, prompt_data: schemas.PromptVersionCreate):
+    db_prompt = models.PromptVersion(**prompt_data.model_dump())
+    db.add(db_prompt)
+    db.commit()
+    db.refresh(db_prompt)
+    return db_prompt
+

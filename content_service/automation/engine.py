@@ -8,7 +8,13 @@ import asyncio
 import re
 from sqlalchemy import func
 from automation.tools import TavilyTool, GeminiTool, EmailTool, UnsplashTool
-from automation.prompts import TOPIC_BRAINSTORM_PROMPT, CONTENT_GENERATION_PROMPT, SEO_OPTIMIZATION_PROMPT
+from automation.prompts import (
+    TOPIC_BRAINSTORM_CORE_PROMPT, 
+    TOPIC_BRAINSTORM_DYNAMIC_PROMPT, 
+    CONTENT_GENERATION_CORE_PROMPT, 
+    CONTENT_GENERATION_DYNAMIC_PROMPT, 
+    SEO_OPTIMIZATION_PROMPT
+)
 import crud, models, schemas
 
 class ArticleAutomationEngine:
@@ -36,7 +42,15 @@ class ArticleAutomationEngine:
             keywords_list = self.db.query(models.Keyword).order_by(func.random()).limit(40).all()
             existing_keywords = ", ".join([k.tag for k in keywords_list])
 
-            brainstorm_prompt = TOPIC_BRAINSTORM_PROMPT.format(
+            # Fetch the latest dynamic prompts from DB, otherwise fall back to prompts.py
+            latest_prompt = crud.get_latest_prompt_version(self.db)
+            dynamic_topic = latest_prompt.topic_brainstorm_dynamic if latest_prompt else TOPIC_BRAINSTORM_DYNAMIC_PROMPT
+            dynamic_content = latest_prompt.content_generation_dynamic if latest_prompt else CONTENT_GENERATION_DYNAMIC_PROMPT
+
+            self.current_content_prompt = dynamic_content # Store for process_single_topic
+
+            brainstorm_prompt = TOPIC_BRAINSTORM_CORE_PROMPT.format(
+                dynamic_instructions=dynamic_topic,
                 categories=", ".join(categories),
                 existing_topics=", ".join(existing_topics) if existing_topics else "None",
                 existing_keywords=existing_keywords if existing_keywords else "None"
@@ -77,7 +91,8 @@ class ArticleAutomationEngine:
                 research_data.extend(results)
             
             # 3. Content Generation (Gemini)
-            gen_prompt = CONTENT_GENERATION_PROMPT.format(
+            gen_prompt = CONTENT_GENERATION_CORE_PROMPT.format(
+                dynamic_instructions=self.current_content_prompt,
                 research_data=str(research_data),
                 template_type=template_type
             )

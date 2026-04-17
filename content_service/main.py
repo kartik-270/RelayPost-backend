@@ -310,6 +310,30 @@ async def trigger_automation_manually(background_tasks: BackgroundTasks, current
     background_tasks.add_task(run_engine)
     return {"message": f"Automation triggered in background for {batch_size} articles."}
 
+@app.post("/admin/automation/pause")
+async def pause_automation(current_user: TokenData = Depends(get_current_admin)):
+    automation_scheduler.pause_automation()
+    return {"message": "Article generation scheduling has been paused."}
+
+@app.post("/admin/automation/resume")
+async def resume_automation(current_user: TokenData = Depends(get_current_admin)):
+    automation_scheduler.resume_automation()
+    return {"message": "Article generation scheduling has been resumed."}
+
+from automation.learning import SelfLearningEngine
+
+@app.post("/admin/automation/learning/trigger")
+async def trigger_learning_loop(background_tasks: BackgroundTasks, current_user: TokenData = Depends(get_current_admin)):
+    async def run_learning():
+        db = AutomationSessionLocal()
+        try:
+            engine = SelfLearningEngine(db)
+            await engine.analyze_and_update_prompt()
+        finally:
+            db.close()
+            
+    background_tasks.add_task(run_learning)
+    return {"message": "Self-learning evaluation triggered in the background."}
 
 # --- USER CONTRIBUTION ENDPOINTS ---
 
