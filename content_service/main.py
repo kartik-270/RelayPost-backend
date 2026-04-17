@@ -79,6 +79,8 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
+    # Dispose of engine connection pool to prevent fork-related SSL/EOF errors
+    engine.dispose()
     # Start the automation scheduler
     automation_scheduler.start()
 
