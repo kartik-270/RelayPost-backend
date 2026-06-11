@@ -83,9 +83,16 @@ class SelfLearningEngine:
             """
 
             result = await self.gemini.generate_structured(evaluation_prompt, temperature=0.7)
+            if isinstance(result, list) and len(result) > 0:
+                for item in result:
+                    if isinstance(item, dict):
+                        result = item
+                        break
+            if not isinstance(result, dict):
+                result = {}
             
-            print(f"Self-Learning Evaluation Score: {result.get('score')} / 10")
-            print(f"Notes: {result.get('evaluation_response')}")
+            print(f"Self-Learning Evaluation Score: {result.get('score', 'N/A')} / 10")
+            print(f"Notes: {result.get('evaluation_response', 'N/A')}")
 
             needs_update = result.get("needs_update", False)
             if not needs_update:

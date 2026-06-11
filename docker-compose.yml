@@ -24,6 +24,8 @@ services:
       - ./auth_service/.env
     volumes:
       - ./auth_service:/app
+      - /app/venv
+      - /app/__pycache__
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       - DATABASE_URL=postgresql://auth_user:auth_password@auth_db:5432/auth_db
@@ -56,6 +58,8 @@ services:
       - ./content_service/.env
     volumes:
       - ./content_service:/app
+      - /app/venv
+      - /app/__pycache__
     command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
     environment:
       - DATABASE_URL=postgresql://content_user:content_password@content_db:5432/content_db
@@ -63,7 +67,41 @@ services:
     depends_on:
       content_db:
         condition: service_healthy
+  news_db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: news_user
+      POSTGRES_PASSWORD: news_password
+      POSTGRES_DB: news_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - news_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U news_user -d news_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  news_service:
+    build:
+      context: ./news_service
+    ports:
+      - "8002:8002"
+    env_file:
+      - ./news_service/.env
+    volumes:
+      - ./news_service:/app
+      - /app/venv
+      - /app/__pycache__
+    command: uvicorn main:app --host 0.0.0.0 --port 8002 --reload
+    environment:
+      - DATABASE_URL=postgresql://news_user:news_password@news_db:5432/news_db
+    depends_on:
+      news_db:
+        condition: service_healthy
 
 volumes:
   auth_db_data:
   content_db_data:
+  news_db_data:

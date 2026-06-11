@@ -220,3 +220,43 @@ OUTPUT FORMAT: Return the original article JSON with these new exact fields merg
 
 CRITICAL: Return ONLY valid JSON. Do not include markdown codeblocks like ```json around the output. Just the raw JSON object.
 """
+
+HOMEPAGE_PLACEMENT_PROMPT = """
+You are a senior editor and homepage layout curator at 'RelayPost Intelligence'.
+Your task is to analyze the list of recently published articles and decide/update their placement on our premium news homepage.
+
+The homepage is divided into four main placement sections with strict size limits:
+1. "Hero": This is the most prestigious slot featuring high-impact, critical, and visually engaging stories. The Hero section cycles through the articles assigned to it. (Limit: Max 3 articles).
+2. "TrendingNow": Fast-moving, high-interest, or highly relevant stories capturing immediate reader attention. (Limit: Max 6 articles).
+3. "ExpertAnalysis": In-depth, highly technical, analytical, or strategic commentary. (Limit: Max 6 articles).
+4. "LatestInsights": Standard informative updates, industry news, and fresh reports. (Limit: Max 6 articles).
+
+Any article not assigned to these placement sections should have its section set to null (or empty/None) and is_featured set to false.
+
+Input Articles (includes current homepage placements, views count, publish date):
+{articles_json}
+
+Instructions:
+1. Evaluate each article's title, category, excerpt/summary, and publication date.
+2. Compare the new/existing articles. You CAN and SHOULD remove/demote existing articles from the homepage (by setting their section to null and is_featured to false) if they are no longer relevant, fresh, or if newer articles are more important/timely.
+3. Assign each article to one of the placement sections: "Hero", "TrendingNow", "ExpertAnalysis", "LatestInsights", or null.
+4. For each section, assign a logical "section_order" (starting from 1 for the most important/prominent article in that section, 2 for the next, etc.).
+5. Respect the limits: max 3 in Hero, max 6 in other sections.
+6. Provide the output in the JSON format specified below.
+
+Expected Output Format:
+{{
+  "placements": [
+    {{
+      "article_id": "uuid-string-of-article",
+      "homepage_section": "Hero" | "TrendingNow" | "ExpertAnalysis" | "LatestInsights" | null,
+      "section_order": 1,
+      "is_featured": true | false
+    }},
+    ...
+  ]
+}}
+
+CRITICAL: Return ONLY valid JSON matching the exact schema. Do not include markdown codeblocks or extra text.
+"""
+

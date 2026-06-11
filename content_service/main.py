@@ -5,6 +5,20 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 load_dotenv()
 
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+
+CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL")
+if CLOUDINARY_URL:
+    cloudinary.config(url=CLOUDINARY_URL)
+elif os.environ.get("CLOUDINARY_CLOUD_NAME"):
+    cloudinary.config(
+        cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
+        api_key=os.environ.get("CLOUDINARY_API_KEY"),
+        api_secret=os.environ.get("CLOUDINARY_API_SECRET")
+    )
+
 from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, Response, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -37,9 +51,10 @@ unsplash_limiter = UnsplashRateLimiter(limit=50, period=3600)
 
 # --- GEMINI AI SETUP ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL_NAME", "gemma-4-26b-a4b-it")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemma-3-27b-it')
+    model = genai.GenerativeModel(GEMINI_MODEL)
 else:
     print("Warning: GEMINI_API_KEY missing. AI features will be disabled.")
 
@@ -156,8 +171,9 @@ def get_public_categories(db: Session = Depends(get_db)):
     return crud.get_categories(db)
 
 @app.get("/public/homepage/category-sections")
-def get_homepage_category_sections(limit: int = 10, db: Session = Depends(get_db)):
-    return crud.get_homepage_category_articles(db, limit=limit)
+def get_homepage_category_sections(limit: int = 10, categories: Optional[List[str]] = Query(None), db: Session = Depends(get_db)):
+    return crud.get_homepage_category_articles(db, limit=limit, categories=categories)
+
 
 @app.get("/public/keywords", response_model=List[schemas.KeywordResponse])
 def get_public_keywords(limit: Optional[int] = None, db: Session = Depends(get_db)):
@@ -336,6 +352,22 @@ async def trigger_learning_loop(background_tasks: BackgroundTasks, current_user:
             
     background_tasks.add_task(run_learning)
     return {"message": "Self-learning evaluation triggered in the background."}
+
+from automation.placement import HomepagePlacementEngine
+
+@app.post("/admin/automation/placement/trigger")
+async def trigger_placement_manually(background_tasks: BackgroundTasks, current_user: TokenData = Depends(get_current_admin)):
+    async def run_placement():
+        db = AutomationSessionLocal()
+        try:
+            engine = HomepagePlacementEngine(db)
+            await engine.reorder_homepage_placements()
+        finally:
+            db.close()
+            
+    background_tasks.add_task(run_placement)
+    return {"message": "Homepage placement curation triggered in the background."}
+
 
 # --- USER CONTRIBUTION ENDPOINTS ---
 

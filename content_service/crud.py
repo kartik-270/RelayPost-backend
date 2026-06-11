@@ -155,10 +155,13 @@ def search_articles(db: Session, query_str: str, limit: int = 10):
     ).order_by(models.Article.published_at.desc()).limit(limit).all()
 
 
-def get_homepage_category_articles(db: Session, limit: int = 10):
-    categories = db.query(models.Category).all()
+def get_homepage_category_articles(db: Session, limit: int = 10, categories: Optional[List[str]] = None):
+    query = db.query(models.Category)
+    if categories:
+        query = query.filter(models.Category.name.in_(categories) | models.Category.slug.in_(categories))
+    db_categories = query.all()
     result = {}
-    for cat in categories:
+    for cat in db_categories:
         articles = db.query(models.Article).filter(
             models.Article.category_id == cat.id,
             models.Article.status == models.ArticleStatus.PUBLISHED,
@@ -170,6 +173,7 @@ def get_homepage_category_articles(db: Session, limit: int = 10):
                 "articles": articles
             }
     return result
+
 
 def create_article(db: Session, article: ArticleCreate):
     # Separate the complex relational fields

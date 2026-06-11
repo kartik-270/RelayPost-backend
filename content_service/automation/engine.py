@@ -56,6 +56,13 @@ class ArticleAutomationEngine:
                 existing_keywords=existing_keywords if existing_keywords else "None"
             )
             brainstorm_result = await self.gemini.generate_structured(brainstorm_prompt, temperature=0.9)
+            if isinstance(brainstorm_result, list) and len(brainstorm_result) > 0:
+                for item in brainstorm_result:
+                    if isinstance(item, dict):
+                        brainstorm_result = item
+                        break
+            if not isinstance(brainstorm_result, dict):
+                brainstorm_result = {}
             raw_topics = brainstorm_result.get("topics", [])
             topics = raw_topics[:batch_size]
             
@@ -97,6 +104,13 @@ class ArticleAutomationEngine:
                 template_type=template_type
             )
             article_data = await self.gemini.generate_structured(gen_prompt, temperature=0.7)
+            if isinstance(article_data, list) and len(article_data) > 0:
+                for item in article_data:
+                    if isinstance(item, dict):
+                        article_data = item
+                        break
+            if not isinstance(article_data, dict):
+                article_data = {}
             
             # 4. SEO & GEO Optimization
             # Fetch random keywords to pass to SEO prompt for mapping
@@ -108,6 +122,13 @@ class ArticleAutomationEngine:
                 existing_keywords=existing_keywords
             )
             final_article_data = await self.gemini.generate_structured(seo_prompt, temperature=0.5)
+            if isinstance(final_article_data, list) and len(final_article_data) > 0:
+                for item in final_article_data:
+                    if isinstance(item, dict):
+                        final_article_data = item
+                        break
+            if not isinstance(final_article_data, dict):
+                final_article_data = {}
             
             # Ensure required fields and fallbacks
             final_article_data["status"] = models.ArticleStatus.DRAFT
@@ -156,13 +177,45 @@ class ArticleAutomationEngine:
                             if local_img_url:
                                 block["content"] = local_img_url
             
-            # 5. Save as Draft
+            # 5. Verify Structure and Images before Publishing
+            is_valid = True
+            
+            # Check structure
+            if not final_article_data.get("title") or not final_article_data.get("slug"):
+                is_valid = False
+            if not isinstance(final_article_data.get("content_blocks"), list) or len(final_article_data["content_blocks"]) == 0:
+                is_valid = False
+            
+            # Check images
+            if not final_article_data.get("hero_image"):
+                is_valid = False
+                
+            valid_blocks = []
+            if "content_blocks" in final_article_data:
+                for block in final_article_data["content_blocks"]:
+                    if block.get("type") == "image":
+                        content = block.get("content")
+                        if not content or not content.startswith("http"):
+                            # Filter out invalid image blocks to ensure cleanliness
+                            is_valid = False
+                            continue
+                    valid_blocks.append(block)
+                final_article_data["content_blocks"] = valid_blocks
+                
+            if is_valid:
+                final_article_data["status"] = models.ArticleStatus.PUBLISHED
+                print(f"[PIPELINE] Validation passed. Publishing directly.")
+            else:
+                final_article_data["status"] = models.ArticleStatus.DRAFT
+                print(f"[PIPELINE] Validation failed. Saving as DRAFT.")
+
+            # 6. Save Article
             article_create = schemas.ArticleCreate(**final_article_data)
             db_article = crud.create_article(self.db, article_create)
             
             print(f"Article Saved with Local Media: {db_article.title} (ID: {db_article.id})")
             
-            # 6. Notify Stakeholders
+            # 7. Notify Stakeholders
             await self.notify_stakeholders(db_article)
             
         except Exception as e:
@@ -195,31 +248,25 @@ class ArticleAutomationEngine:
         return data
 
     async def save_local_image(self, remote_url: str, filename_prefix: str) -> Optional[str]:
-        """Downloads an image and saves it to the local Media table."""
+        """Downloads an image and uploads it to Cloudinary."""
         try:
             image_bytes = await self.unsplash.download_image(remote_url)
             if not image_bytes:
                 return None
             
-            # Deduce filename/ext
-            filename = f"{filename_prefix}.jpg"
+            import cloudinary.uploader
             
-            # Save to Database
-            db_media = crud.create_media(
-                db=self.db,
-                filename=filename,
-                content_type="image/jpeg",
-                data=image_bytes,
-                size=len(image_bytes)
+            upload_result = cloudinary.uploader.upload(
+                image_bytes,
+                public_id=filename_prefix,
+                fetch_format="auto",
+                quality="auto"
             )
             
-            # Construct Local URL
-            # Note: This should match the backend's media serving endpoint
-            base_url = os.getenv("BACKEND_URL", "http://localhost:8001")
-            return f"{base_url}/public/media/{db_media.id}"
+            return upload_result.get("secure_url")
             
         except Exception as e:
-            print(f"Error saving local image: {e}")
+            print(f"Error saving image to Cloudinary: {e}")
             return None
 
     async def notify_stakeholders(self, article):

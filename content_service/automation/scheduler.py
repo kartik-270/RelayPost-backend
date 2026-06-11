@@ -60,6 +60,24 @@ async def cleanup_deleted_articles_task():
         db.close()
 
 
+async def run_homepage_placement_task():
+    """Top-level function to curate homepage placements every 12 hours (Serialization-safe)."""
+    db: Session = SessionLocal()
+    has_lock = db.execute(text("SELECT pg_try_advisory_lock(1004)")).scalar()
+    if not has_lock:
+        db.close()
+        return
+        
+    try:
+        from automation.placement import HomepagePlacementEngine
+        engine = HomepagePlacementEngine(db)
+        await engine.reorder_homepage_placements()
+    finally:
+        db.execute(text("SELECT pg_advisory_unlock(1004)"))
+        db.commit()
+        db.close()
+
+
 class AutomationScheduler:
     def __init__(self):
         jobstores = {
@@ -94,6 +112,15 @@ class AutomationScheduler:
             run_learning_loop_task,
             CronTrigger(hour=12, minute=0),
             id="self_learning_job",
+            replace_existing=True,
+            misfire_grace_time=3600
+        )
+
+        # Run Homepage placement reordering every 12 hours
+        self.scheduler.add_job(
+            run_homepage_placement_task,
+            CronTrigger(hour="0,12", minute=0),
+            id="homepage_placement_job",
             replace_existing=True,
             misfire_grace_time=3600
         )

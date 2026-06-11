@@ -47,45 +47,150 @@ class TavilyTool:
 class GeminiTool:
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
+        self.model_name = os.getenv("GEMINI_MODEL_NAME")
         if self.api_key:
             genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemma-3-27b-it')
+            if not self.model_name:
+                try:
+                    available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                    print(f"[GEMINI] Available models on this API key: {available_models}")
+                    for pref in ["models/gemini-3.5-flash", "models/gemini-1.5-pro", "models/gemini-pro", "models/gemini-1.0-pro"]:
+                        if pref in available_models:
+                            self.model_name = pref.replace("models/", "")
+                            break
+                    if not self.model_name and available_models:
+                        self.model_name = available_models[0].replace("models/", "")
+                except Exception as e:
+                    print(f"[GEMINI] Failed to list models: {e}")
+            
+            if not self.model_name:
+                self.model_name = "gemini-3.5-flash"
+                
+            print(f"[GEMINI] Selected model: {self.model_name}")
+            self.model = genai.GenerativeModel(self.model_name)
         else:
             self.model = None
 
-    async def generate_structured(self, prompt: str, temperature: float = 0.7, top_p: float = 0.95, max_retries: int = 3):
+    async def generate_structured(self, prompt: str, temperature: float = 0.7, top_p: float = 0.95, max_retries: int = 4):
         import asyncio
         if not self.model:
             raise Exception("Gemini API key missing")
         
-        generation_config = {
-            "temperature": temperature,
-            "top_p": top_p,
-        }
-        
         for attempt in range(max_retries):
-            try:
-                response = await self.model.generate_content_async(prompt, generation_config=generation_config)
-                text = response.text
-                if "```json" in text:
-                    text = text.split("```json")[1].split("```")[0].strip()
-                elif "```" in text:
-                    text = text.split("```")[1].split("```")[0].strip()
+            if attempt == 0:
+                generation_config = {
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "response_mime_type": "application/json",
+                }
+            elif attempt == 1:
+                print("[GEMINI] Retrying: Falling back to text/plain mode...")
+                generation_config = {
+                    "temperature": temperature,
+                    "top_p": top_p,
+                }
+            elif attempt == 2:
+                print("[GEMINI] Retrying: Dropping temperature and top_p but keeping json mode...")
+                generation_config = {
+                    "response_mime_type": "application/json",
+                }
+            else:
+                print("[GEMINI] Retrying: Dropping all generation_config parameters...")
+                generation_config = None
                 
-                return json.loads(text)
+            try:
+                if generation_config is not None:
+                    response = await self.model.generate_content_async(prompt, generation_config=generation_config)
+                else:
+                    response = await self.model.generate_content_async(prompt)
+                text = response.text
+                
+                # Use raw_decode loop to extract all valid JSON objects/arrays
+                import json
+                decoder = json.JSONDecoder()
+                pos = 0
+                parsed_objects = []
+                while pos < len(text):
+                    start_obj = text.find('{', pos)
+                    start_arr = text.find('[', pos)
+                    
+                    start = -1
+                    if start_obj != -1 and start_arr != -1:
+                        start = min(start_obj, start_arr)
+                    elif start_obj != -1:
+                        start = start_obj
+                    elif start_arr != -1:
+                        start = start_arr
+                        
+                    if start == -1:
+                        break
+                        
+                    try:
+                        obj, end_pos = decoder.raw_decode(text[start:])
+                        parsed_objects.append(obj)
+                        pos = start + end_pos
+                    except json.JSONDecodeError:
+                        pos = start + 1
+                
+                if parsed_objects:
+                    # Normalize lists containing a single dict or other list
+                    normalized_objects = []
+                    for obj in parsed_objects:
+                        curr = obj
+                        while isinstance(curr, list) and len(curr) == 1:
+                            curr = curr[0]
+                        normalized_objects.append(curr)
+                    
+                    # Also include any dicts nested within top-level lists
+                    extended_objects = []
+                    for obj in normalized_objects:
+                        extended_objects.append(obj)
+                        if isinstance(obj, list):
+                            for item in obj:
+                                if isinstance(item, dict):
+                                    extended_objects.append(item)
+
+                    # Filter and prioritize the object matching our expected schema
+                    for obj in reversed(extended_objects):
+                        if isinstance(obj, dict):
+                            if "topics" in obj and isinstance(obj["topics"], list) and len(obj["topics"]) > 0:
+                                return obj
+                            if "content_blocks" in obj and isinstance(obj["content_blocks"], list) and len(obj["content_blocks"]) > 0:
+                                return obj
+                            if "focus_keyword" in obj or "meta_title" in obj:
+                                return obj
+                                
+                    # Fallback to the last parsed dict/list (usually the final generated JSON)
+                    for obj in reversed(extended_objects):
+                        if isinstance(obj, (dict, list)):
+                            return obj
+                            
+                # Fallback to direct loads if no objects were parsed
+                parsed = json.loads(text)
+                while isinstance(parsed, list) and len(parsed) == 1:
+                    parsed = parsed[0]
+                return parsed
             except Exception as e:
                 error_msg = str(e)
                 print(f"Gemini Generation Attempt {attempt + 1} Failed: {error_msg[:200]}")
-                if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg and attempt < max_retries - 1:
-                    # Parse retry delay from gRPC format: "Please retry in 55.02s"
-                    # or REST format: "retry_delay { seconds: 47 }"
-                    import re
-                    match = (
-                        re.search(r'Please retry in (\d+)', error_msg) or
-                        re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', error_msg)
-                    )
-                    wait_time = int(match.group(1)) + 5 if match else 60 * (attempt + 1)
-                    print(f"Rate limited. Retrying in {wait_time} seconds...")
+                if attempt < max_retries - 1:
+                    is_rate_limit = "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg
+                    is_server_error = "500" in error_msg or "503" in error_msg or "InternalServerError" in error_msg or "ServiceUnavailable" in error_msg
+                    
+                    if is_rate_limit:
+                        import re
+                        match = (
+                            re.search(r'Please retry in (\d+)', error_msg) or
+                            re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', error_msg)
+                        )
+                        wait_time = int(match.group(1)) + 5 if match else 30 * (attempt + 1)
+                        print(f"Rate limited. Retrying in {wait_time} seconds...")
+                    elif is_server_error:
+                        wait_time = 5 * (attempt + 1)
+                        print(f"Server error. Retrying in {wait_time} seconds...")
+                    else:
+                        wait_time = 2 * (attempt + 1)
+                        print(f"Transient error. Retrying in {wait_time} seconds...")
                     await asyncio.sleep(wait_time)
                 else:
                     raise e
