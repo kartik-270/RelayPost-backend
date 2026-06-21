@@ -1,107 +1,91 @@
+```yaml
 services:
-  auth_db:
+  postgres:
     image: postgres:15-alpine
+    container_name: relaypost_postgres
+    restart: unless-stopped
+
     environment:
-      POSTGRES_USER: auth_user
-      POSTGRES_PASSWORD: auth_password
-      POSTGRES_DB: auth_db
-    ports:
-      - "5435:5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+
     volumes:
-      - auth_db_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+    networks:
+      - relaypost_network
 
   auth_service:
-    build: 
+    build:
       context: ./auth_service
-    ports:
-      - "8000:8000"
+
+    container_name: auth_service
+    restart: unless-stopped
+
     env_file:
       - ./auth_service/.env
-    volumes:
-      - ./auth_service:/app
-      - /app/venv
-      - /app/__pycache__
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-    environment:
-      - DATABASE_URL=postgresql://auth_user:auth_password@auth_db:5432/auth_db
+
     depends_on:
-      auth_db:
+      postgres:
         condition: service_healthy
 
-  content_db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: content_user
-      POSTGRES_PASSWORD: content_password
-      POSTGRES_DB: content_db
     ports:
-      - "5433:5432"
-    volumes:
-      - content_db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U content_user -d content_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - "8000:8000"
+
+    networks:
+      - relaypost_network
 
   content_service:
     build:
       context: ./content_service
-    ports:
-      - "8001:8001"
+
+    container_name: content_service
+    restart: unless-stopped
+
     env_file:
       - ./content_service/.env
-    volumes:
-      - ./content_service:/app
-      - /app/venv
-      - /app/__pycache__
-    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
-    environment:
-      - DATABASE_URL=postgresql://content_user:content_password@content_db:5432/content_db
-      - AUTOMATION_BATCH_SIZE=3
+
     depends_on:
-      content_db:
+      postgres:
         condition: service_healthy
-  news_db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: news_user
-      POSTGRES_PASSWORD: news_password
-      POSTGRES_DB: news_db
+
     ports:
-      - "5434:5432"
-    volumes:
-      - news_db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U news_user -d news_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - "8001:8001"
+
+    networks:
+      - relaypost_network
 
   news_service:
     build:
       context: ./news_service
-    ports:
-      - "8002:8002"
+
+    container_name: news_service
+    restart: unless-stopped
+
     env_file:
       - ./news_service/.env
-    volumes:
-      - ./news_service:/app
-      - /app/venv
-      - /app/__pycache__
-    command: uvicorn main:app --host 0.0.0.0 --port 8002 --reload
-    environment:
-      - DATABASE_URL=postgresql://news_user:news_password@news_db:5432/news_db
+
     depends_on:
-      news_db:
+      postgres:
         condition: service_healthy
 
+    ports:
+      - "8002:8002"
+
+    networks:
+      - relaypost_network
+
+networks:
+  relaypost_network:
+    driver: bridge
+
 volumes:
-  auth_db_data:
-  content_db_data:
-  news_db_data:
+  postgres_data:
+```
