@@ -1,0 +1,93 @@
+name: Deploy RelayPost Backend
+
+on:
+  push:
+    branches:
+      - prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+
+          chmod 600 ~/.ssh/id_ed25519
+
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to EC2
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+          -o StrictHostKeyChecking=no \
+          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+
+            set -e
+
+            echo "Changing directory..."
+            cd ~/app/RelayPost-backend
+
+            echo "Fetching latest code..."
+            git fetch origin
+
+            OLD_COMMIT=$(git rev-parse HEAD)
+
+            git reset --hard origin/main
+
+            echo "Changed files:"
+            CHANGED_FILES=$(git diff --name-only $OLD_COMMIT HEAD)
+            echo "$CHANGED_FILES"
+
+            AUTH_CHANGED=false
+            CONTENT_CHANGED=false
+            NEWS_CHANGED=false
+
+            if echo "$CHANGED_FILES" | grep -q "^auth_service/"; then
+              AUTH_CHANGED=true
+            fi
+
+            if echo "$CHANGED_FILES" | grep -q "^content_service/"; then
+              CONTENT_CHANGED=true
+            fi
+
+            if echo "$CHANGED_FILES" | grep -q "^news_service/"; then
+              NEWS_CHANGED=true
+            fi
+
+            if echo "$CHANGED_FILES" | grep -q "^docker-compose.yml"; then
+              AUTH_CHANGED=true
+              CONTENT_CHANGED=true
+              NEWS_CHANGED=true
+            fi
+
+            if [ "$AUTH_CHANGED" = true ]; then
+              echo "Deploying Auth Service..."
+              docker compose build auth_service
+              docker compose up -d auth_service
+            fi
+
+            if [ "$CONTENT_CHANGED" = true ]; then
+              echo "Deploying Content Service..."
+              docker compose build content_service
+              docker compose up -d content_service
+            fi
+
+            if [ "$NEWS_CHANGED" = true ]; then
+              echo "Deploying News Service..."
+              docker compose build news_service
+              docker compose up -d news_service
+            fi
+
+            echo "Cleaning Docker images..."
+            docker image prune -f
+
+            echo "Deployment completed successfully."
+
+          EOF
