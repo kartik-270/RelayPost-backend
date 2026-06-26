@@ -23,7 +23,7 @@ def get_articles(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
     keyword: Optional[str] = None,
-    is_verified: Optional[bool] = None
+    is_verified: Optional[bool] = True
 ):
     query = db.query(models.Article)
 
@@ -59,30 +59,48 @@ def get_articles(
     
     return items, total
 
-def get_latest_articles(db: Session, limit: int = 50):
-    return db.query(models.Article).order_by(
+def get_latest_articles(db: Session, limit: int = 50, is_verified: Optional[bool] = True):
+    query = db.query(models.Article)
+    if is_verified is not None:
+        query = query.filter(models.Article.is_verified == is_verified)
+    return query.order_by(
         desc(models.Article.title.ilike('%india%')),
         desc(models.Article.description.ilike('%india%')),
         desc(models.Article.published_at)
     ).limit(limit).all()
 
-def get_clustered_articles(db: Session, cluster_id: int):
-    return db.query(models.Article).filter(models.Article.cluster_id == cluster_id).all()
+def get_clustered_articles(db: Session, cluster_id: int, is_verified: Optional[bool] = True):
+    query = db.query(models.Article).filter(models.Article.cluster_id == cluster_id)
+    if is_verified is not None:
+        query = query.filter(models.Article.is_verified == is_verified)
+    return query.all()
 
-def get_article_by_id(db: Session, article_id: int):
-    return db.query(models.Article).filter(models.Article.id == article_id).first()
+def get_article_by_id(db: Session, article_id: int, is_verified: Optional[bool] = None):
+    query = db.query(models.Article).filter(models.Article.id == article_id)
+    if is_verified is not None:
+        query = query.filter(models.Article.is_verified == is_verified)
+    return query.first()
 
-def get_article_by_slug(db: Session, slug: str):
-    article = db.query(models.Article).filter(models.Article.slug == slug).first()
+def get_article_by_slug(db: Session, slug: str, is_verified: Optional[bool] = None):
+    query = db.query(models.Article).filter(models.Article.slug == slug)
+    if is_verified is not None:
+        query = query.filter(models.Article.is_verified == is_verified)
+    article = query.first()
     
     if not article and slug.isdigit():
-        article = db.query(models.Article).filter(models.Article.id == int(slug)).first()
+        query2 = db.query(models.Article).filter(models.Article.id == int(slug))
+        if is_verified is not None:
+            query2 = query2.filter(models.Article.is_verified == is_verified)
+        article = query2.first()
 
     if article and article.cluster_id:
-        related = db.query(models.Article).filter(
+        query_related = db.query(models.Article).filter(
             models.Article.cluster_id == article.cluster_id,
             models.Article.id != article.id
-        ).all()
+        )
+        if is_verified is not None:
+            query_related = query_related.filter(models.Article.is_verified == is_verified)
+        related = query_related.all()
         # Create a dict that matches ArticleWithSources schema
         article_dict = {c.name: getattr(article, c.name) for c in article.__table__.columns}
         article_dict['related_sources'] = [
