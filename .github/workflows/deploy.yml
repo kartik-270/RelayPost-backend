@@ -38,7 +38,9 @@ jobs:
           OLD_COMMIT=$(git rev-parse HEAD)
 
           git checkout prod
-          git pull origin prod
+          git reset --hard origin/prod
+
+          git clean -fd
 
           echo "Changed files:"
           CHANGED_FILES=$(git diff --name-only "$OLD_COMMIT" HEAD)
