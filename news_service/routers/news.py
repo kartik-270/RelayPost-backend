@@ -98,7 +98,7 @@ def get_grouped_news(
 @router.get("/slug/{slug}", response_model=schemas.ArticleWithSources)
 def get_news_by_slug(slug: str, db: Session = Depends(get_db)):
     """Get a single news article by its slug"""
-    article = crud.get_article_by_slug(db, slug=slug)
+    article = crud.get_article_by_slug(db, slug=slug, is_verified=True)
     if not article:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="News article not found")
@@ -107,7 +107,7 @@ def get_news_by_slug(slug: str, db: Session = Depends(get_db)):
 @router.get("/id/{article_id}", response_model=schemas.Article)
 def get_news_by_id(article_id: int, db: Session = Depends(get_db)):
     """Get a single news article by its ID"""
-    article = crud.get_article_by_id(db, article_id=article_id)
+    article = crud.get_article_by_id(db, article_id=article_id, is_verified=True)
     if not article:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="News article not found")
