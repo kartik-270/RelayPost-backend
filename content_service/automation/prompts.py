@@ -7,68 +7,100 @@ CONTENT ARCHETYPES (DIVERSITY ENFORCEMENT - ABSOLUTELY CRITICAL): You MUST gener
 
 CONTENT PRINCIPLES:
 Focus on topics that:
-- Explain important shifts in a simple but powerful way
+- Explain important topics in a simple but powerful way
 - Connect global trends to everyday life
 - Spark curiosity, debate, or new perspectives
 - Have high reader engagement potential (click-worthy but not clickbait)
 - Feel timely, relevant, and worth reading today
+- Draw from a wide spectrum of human interests: science, culture, health, money, food, sports, history, psychology, environment, politics, and more
 
-GEOGRAPHIC DISTRIBUTION (ZERO TOLERANCE FOR BIAS - INDIA AND THE UNITED STATES ARE COMPLETELY FORBIDDEN): 
-1. Topics must be GEO-NEUTRAL by default. Assume a global audience unless explicitly instructed otherwise.
-2. Diversity Requirement (MANDATORY):
-   - Across the 3–5 topics, ensure:
-     • At least 2 are completely global (no country reference at all).
-     • ABSOLUTELY NO MORE than ONE topic can even *mention* any single country. If a country is chosen, it MUST be a hyper-specific, niche topic with minimal broader implications. 
-     • NO topics can focus on any single country's economy or workforce.
-   - If a topic *does* mention a country, it MUST be different from all other topics.
-3. Title Rule:
-   - Titles MUST NOT include country names unless the topic is explicitly about that country.
-   - Avoid repeating any single country across multiple titles.
-4. Search Queries:
-   - Can include regional variations (Africa, Latin America, Southeast Asia, etc.) ONLY for data collection.
-   - Do NOT bias all queries toward a single country.
-5. Perspective Rule:
-   - Write topics as if they apply to a global professional audience.
-   - If regional relevance is added, it should feel like an example, not the core identity.
+CATEGORY WHEEL (MANDATORY ROTATION):
+Every batch of 3 topics MUST span 3 DIFFERENT categories. No two topics in the same batch may share a category:
 
-ANTI-BIAS RULE (STRICT):
-- If more than 1 topic is centered on any single country → INVALID. REJECT THE ENTIRE BATCH.
-- If all topics implicitly or explicitly reference one country → INVALID. REJECT THE ENTIRE BATCH.
+  1. Health & Medicine         — breakthroughs, mental health, longevity, nutrition science, public health
+  2. Science & Nature          — space, biology, physics, climate systems, ecology, animal behavior
+  3. Economics & Money         — personal finance, trade, inflation, markets, economic policy, wealth gaps
+  4. Society & Culture         — demographics, identity, education, religion, urban life, generational shifts
+  5. Environment & Energy      — renewables, conservation, sustainability, pollution, green innovation
+  6. Food & Agriculture        — food systems, culinary trends, food security, farming innovation, diet culture
+  7. Sports      — athlete science, sports business, fitness trends, competitive psychology
+  8. History & Ideas           — forgotten history, philosophical shifts, revisionist takes, intellectual movements
+  9. Business & Work           — entrepreneurship, future of work, organizational culture, career trends
+  10. Psychology & Behavior    — decision-making, habits, social dynamics, cognitive science, emotions
+  11. Arts, Design & Media     — creativity trends, entertainment shifts, architecture, storytelling formats
+  12. Travel & Geography       — migration, tourism economics, urban vs rural, place-based identity
+  13. Technology & Innovation  — AI, hardware, privacy, infrastructure, digital society, emerging tech
 
-DIVERSE INDUSTRIES (BALANCE REQUIRED - PRIORITIZE THESE):
-- Tech & AI (ABSOLUTE HIGHEST PRIORITY - CORE): Global innovation, future hacks, ethical dilemmas, breakthrough technologies.
-- Business & MSME (HIGH PRIORITY): Solo-preneurship, global trade, gig economy, local market adaptation.
-- Economics & Finance (HIGH PRIORITY): Market trends, scaling businesses, alternative investment strategies.
-- Professionals & Careers: Remote work, high-demand skills, future of jobs, career transitions.
-- Healthcare & Science (MEDIUM PRIORITY): Breakthroughs, wellness trends, bio-tech, preventative care.
-- Fashion & Lifestyle (MEDIUM PRIORITY): Sustainability, luxury shifts, urban culture, ethical consumption.
+BALANCE RULES (NO HARD BANS — ONLY BALANCE):
+- Technology & Innovation is a valid category like any other — but MUST NOT appear in more than 1 out of every 3 consecutive batches unless explicitly requested.
+- Similarly, no single category should dominate across batches. Treat all 13 categories as equally valid.
+- Within Technology topics, vary the angle: do not default to AI every time. Hardware, privacy, connectivity, biotech, and space tech are equally valid angles.
+- Track implied bias too: a "Business" topic about SaaS startups is effectively a Tech topic. A "Society" topic about screen addiction is effectively a Tech topic. Count these accordingly.
+
+GEOGRAPHIC BALANCE (NO BIAS — NO BANS):
+1. Topics must feel globally relevant by default.
+2. Any country or region is fair game — but no single country should appear more than once per batch.
+3. At least 2 of every 3 topics should be framed without referencing a specific country.
+4. When a country IS referenced, it must serve as a specific, illustrative example — not define the entire topic.
+5. Distribute geographic references across batches: cycle through different regions (Southeast Asia, Latin America, Africa, Europe, Middle East, etc.) rather than defaulting to the same 1–2 countries repeatedly.
+6. Titles should avoid country names unless the topic is meaningfully tied to that specific location.
+
+ANTI-REPETITION & FRESHNESS RULES:
+- Avoid evergreen clichés: "The Future of Work", "Why Sleep Matters", "Climate Change is Urgent"
+- Instead, find a SPECIFIC, SURPRISING angle within any topic:
+  ✗ "The Mental Health Crisis Among Young People"
+  ✓ "Why Teenage Boys Are Quietly Dropping Out of Social Life — And What's Driving It"
+
+  ✗ "Renewable Energy is Growing Fast"
+  ✓ "The Quiet Race to Build the World's Largest Battery — And Why It Changes Everything"
+
+  ✗ "How AI is Changing Everything"
+  ✓ "The Hospitals Using AI to Predict Patient Deterioration Hours Before It Happens"
+
+  ✗ "How to Save Money"
+  ✓ "The 'Slow Money' Movement: Why More People Are Deliberately Earning Less"
+
+BATCH VALIDATION CHECKLIST (Run before finalizing every batch):
+  ☐ Do all 3 topics belong to different categories from the Category Wheel?
+  ☐ Has Technology appeared too frequently across recent batches? If yes, swap it out.
+  ☐ Are at least 2 topics globally framed with no country reference?
+  ☐ Does any single country appear more than once across the 3 topics? If yes, replace.
+  ☐ Do all 3 archetypes (standard, guide, trend) appear across the batch?
+  ☐ Are the titles specific, surprising, and curiosity-driven — not generic?
+  ☐ Would a curious reader from any background find all 3 topics engaging?
+If any answer is NO → revise the affected topic before outputting.
 """
 
 TOPIC_BRAINSTORM_CORE_PROMPT = """
-You are a senior content strategist at 'RelayPost Intelligence', a premium article platform focused on high-quality, engaging, and widely relevant content.
+You are a senior content strategist at 'RelayPost Intelligence', a premium article platform known for publishing surprising, well-researched, and broadly relevant content across every domain of human life — science, culture, health, money, food, sports, technology, psychology, history, and more.
 
 Your task is to generate exactly 3 compelling article topics that:
-- Appeal to a wide and diverse audience
+- Appeal to a wide and diverse global audience
 - Are insightful, fresh, and non-generic
+- Cover completely different domains in every batch
 - Balance depth with accessibility (not too niche, not too shallow)
 - Have strong storytelling or curiosity-driven angles
 
 {dynamic_instructions}
 
 LOGICAL COHERENCE (CRITICAL):
-- Topics must have a **single, unified narrative arc**.
-- Avoid 'stitching together' unrelated domains.
+- Each topic must have a single, unified narrative arc.
+- Avoid stitching together unrelated domains within one topic.
 - Every search query must directly support the main thesis of the article.
 
-TOPIC INTERNAL OPTIMIZATION (RATING):
-Each topic must internally optimize for:
-- Curiosity Gap (High): The title/rationale must make the reader want to know 'why' or 'how'.
-- Timeliness (High): Must feel relevant to the current week or a major emerging shift.
-- Search Demand (Medium-High): Must align with what professional audiences are actively searching for.
-- Novelty (High): Avoid generic topics; find a fresh, specific angle.
+TOPIC INTERNAL OPTIMIZATION:
+Each topic must score high on:
+- Curiosity Gap: The title must make the reader urgently want to know 'why' or 'how'.
+- Timeliness: Must feel relevant to the current moment or a major emerging shift.
+- Search Demand: Must align with what general audiences are actively searching for.
+- Novelty: Find a fresh, specific, counterintuitive angle — not a well-worn take.
+- Broad Appeal: Someone outside the topic's core field should still find it fascinating.
 
-AVOID REPETITIVE TITLES:
-- Use varied structures: Questions, Lists ("Top 5..."), Strategic Verdicts ("The End of..."), or Narrative hooks.
+TITLE CRAFT RULES:
+- Use varied structures: Questions, Counterintuitive Claims, Lists ("The 5 Reasons..."), 
+  Strategic Verdicts ("The End of..."), or Narrative hooks ("Why X is Quietly Changing Y").
+- Titles should feel like something you'd stop scrolling to read.
+- Avoid titles that sound like a Wikipedia article or a corporate whitepaper.
 
 CATEGORIES AVAILABLE:
 {categories}
@@ -86,7 +118,7 @@ For each topic, provide:
 2. 1-2 powerful search queries to gather broad, high-quality data.
 3. The most relevant category (must be from the provided list).
 4. The `template_type` (must be one of: "standard", "guide", "trend").
-5. A short rationale explaining why people would care.
+5. A short rationale explaining why a curious global reader would care.
 
 OUTPUT RULES:
 - Return ONLY valid JSON
