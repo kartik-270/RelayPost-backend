@@ -68,6 +68,10 @@ jobs:
             NEWS_CHANGED=true
           fi
 
+          echo "Cleaning up old Docker data to free up space..."
+          docker system prune -af || true
+          docker builder prune -af || true
+
           if [ "$AUTH_CHANGED" = true ]; then
             echo "Deploying auth_service..."
             docker compose build auth_service
