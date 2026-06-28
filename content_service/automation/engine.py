@@ -164,7 +164,7 @@ class ArticleAutomationEngine:
                     final_article_data["hero_image"] = hero_url
             
             if not final_article_data.get("hero_image"):
-                final_article_data["hero_image"] = "https://images.unsplash.com/photo-1544411047-c491574abb46?q=80&w=1200&auto=format&fit=crop"
+                final_article_data["hero_image"] = "/fallback_article.png"
 
             # 2. Fetch & Save Inline Images
             if "content_blocks" in final_article_data:
@@ -181,7 +181,7 @@ class ArticleAutomationEngine:
                             else:
                                 block["content"] = img_url
                         if not block.get("content"):
-                            block["content"] = "https://images.unsplash.com/photo-1544411047-c491574abb46?q=80&w=1200&auto=format&fit=crop"
+                            block["content"] = "/fallback_article.png"
             
             # 5. Verify Structure and Images before Publishing
             is_valid = True
@@ -201,7 +201,7 @@ class ArticleAutomationEngine:
                 for block in final_article_data["content_blocks"]:
                     if block.get("type") == "image":
                         content = block.get("content")
-                        if not content or not content.startswith("http"):
+                        if not content or not (content.startswith("http") or content.startswith("/")):
                             # Filter out invalid image blocks to ensure cleanliness
                             is_valid = False
                             continue
