@@ -122,7 +122,8 @@ def generate_ai_summaries():
                 "news reports. First, determine if the information across these sources appears to be genuine, "
                 "factual, and coherent. Synthesize a single refined, highly structured narrative as a detailed 'full_analysis'. "
                 "The 'full_analysis' MUST be formatted as rich HTML (using <h2>, <h3>, <p>, <ul>, <li>, <strong>, <blockquote>) so it reads like a premium, deep-dive article from the Content Engine. Include an engaging introduction, structured body paragraphs with subheadings, and a conclusive summary.\n"
-                "Also generate a short 'ai_summary' (plain text), a URL-friendly 'slug', an SEO title (max 60 chars), an SEO meta description (max 160 chars), and a specific 'category' (e.g. 'Cybersecurity', 'Startups', 'Politics', 'Healthcare', rather than generic ones).\n\n"
+                "Also generate a short 'ai_summary' (plain text), a URL-friendly 'slug', an SEO title (max 60 chars), an SEO meta description (max 160 chars), and a specific 'category'.\n\n"
+                "CRITICAL CATEGORY RULE: You MUST choose the category from this EXACT list: ['World News', 'Politics', 'Business', 'Technology', 'Science', 'Health', 'Sports', 'Entertainment']. Do not invent or use any other category names.\n\n"
                 "CRITICAL: The generated 'full_analysis', 'ai_summary', 'slug', 'meta_title', 'meta_description', and 'category' MUST be strictly based ON and ONLY ON the provided news reports in the 'Context' section below. Do not introduce any external news stories, topics, or facts that are not present in the Context. If the context is empty or completely incoherent, set 'is_genuine' to false and return generic placeholders.\n\n"
                 "Return the response in pure JSON format with these exact keys: "
                 "'is_genuine' (boolean), 'category' (string), 'ai_summary', 'full_analysis' (HTML string), 'slug', 'meta_title', 'meta_description'.\n\n"
@@ -211,16 +212,21 @@ def generate_ai_summaries():
                     
                     if data and ('ai_summary' in data or 'full_analysis' in data):
                         import uuid
-                        for article in articles:
-                            article.ai_summary = data.get('ai_summary')
-                            article.full_analysis = data.get('full_analysis')
-                            base_slug = data.get('slug') or article.slug
-                            article.slug = f"{base_slug}-{uuid.uuid4().hex[:8]}"
-                            article.meta_title = data.get('meta_title')
-                            article.meta_description = data.get('meta_description')
-                            article.is_verified = bool(data.get('is_genuine', False))
-                            if data.get('category'):
-                                article.category = data.get('category')
+                        primary_article = articles[0]
+                        primary_article.ai_summary = data.get('ai_summary')
+                        primary_article.full_analysis = data.get('full_analysis')
+                        base_slug = data.get('slug') or primary_article.slug
+                        primary_article.slug = f"{base_slug}-{uuid.uuid4().hex[:8]}"
+                        primary_article.meta_title = data.get('meta_title')
+                        primary_article.meta_description = data.get('meta_description')
+                        primary_article.is_verified = bool(data.get('is_genuine', False))
+                        if data.get('category'):
+                            primary_article.category = data.get('category')
+                            
+                        # Keep secondary articles as related but not verified so they don't duplicate on frontend
+                        for other_article in articles[1:]:
+                            other_article.is_verified = False
+                            
                         db.commit()
                         print(f"Successfully generated summary for cluster {cluster_id}")
                         break # Success, exit retry loop
