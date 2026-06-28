@@ -28,12 +28,19 @@ def trigger_engine():
     trigger_news_job()
     return {"status": "triggered", "message": "News engine triggered successfully"}
 
-@router.get("/live", response_model=List[schemas.Article])
+@router.get("/live")
 def get_live_feed(
-    skip: int = 0, limit: int = 20, db: Session = Depends(get_db)
+    skip: int = 0, limit: int = 20, is_admin: bool = False, db: Session = Depends(get_db)
 ):
     """Get the most recent unstructured live feed of news"""
-    return crud.get_latest_articles(db, limit=limit)
+    from fastapi.responses import JSONResponse
+    is_verified = None if is_admin else True
+    articles = crud.get_latest_articles(db, limit=limit, skip=skip, is_verified=is_verified)
+    total = crud.count_articles(db, is_verified=is_verified)
+    return JSONResponse(
+        content=[{c.name: getattr(a, c.name).__str__() if not isinstance(getattr(a, c.name), (str, int, float, bool, type(None), list)) else getattr(a, c.name) for c in a.__table__.columns} for a in articles],
+        headers={"X-Total-Count": str(total), "Access-Control-Expose-Headers": "X-Total-Count"}
+    )
 
 @router.get("/categories/{category}", response_model=schemas.ArticlePaginated)
 def get_category_news(
@@ -105,9 +112,9 @@ def get_news_by_slug(slug: str, db: Session = Depends(get_db)):
     return article
 
 @router.get("/id/{article_id}", response_model=schemas.Article)
-def get_news_by_id(article_id: int, db: Session = Depends(get_db)):
+def get_news_by_id(article_id: int, is_admin: bool = False, db: Session = Depends(get_db)):
     """Get a single news article by its ID"""
-    article = crud.get_article_by_id(db, article_id=article_id, is_verified=True)
+    article = crud.get_article_by_id(db, article_id=article_id, is_verified=None if is_admin else True)
     if not article:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="News article not found")

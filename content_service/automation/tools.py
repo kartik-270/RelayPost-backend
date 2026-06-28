@@ -47,25 +47,9 @@ class TavilyTool:
 class GeminiTool:
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
-        self.model_name = os.getenv("GEMINI_MODEL_NAME")
+        self.model_name = "gemma-4-31b-it"
         if self.api_key:
             genai.configure(api_key=self.api_key)
-            if not self.model_name:
-                try:
-                    available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                    print(f"[GEMINI] Available models on this API key: {available_models}")
-                    for pref in ["models/gemini-3.5-flash", "models/gemini-1.5-pro", "models/gemini-pro", "models/gemini-1.0-pro"]:
-                        if pref in available_models:
-                            self.model_name = pref.replace("models/", "")
-                            break
-                    if not self.model_name and available_models:
-                        self.model_name = available_models[0].replace("models/", "")
-                except Exception as e:
-                    print(f"[GEMINI] Failed to list models: {e}")
-            
-            if not self.model_name:
-                self.model_name = "gemini-3.5-flash"
-                
             print(f"[GEMINI] Selected model: {self.model_name}")
             self.model = genai.GenerativeModel(self.model_name)
         else:

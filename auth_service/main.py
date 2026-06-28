@@ -34,7 +34,14 @@ async def integrity_exception_handler(request, exc: IntegrityError):
     
     return Response(content='{"detail": "Database integrity error."}', status_code=400, media_type="application/json")
 
-cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
+raw_origins = os.environ.get("CORS_ORIGINS", "")
+if raw_origins:
+    cors_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+else:
+    cors_origins = []
+
+if not cors_origins:
+    cors_origins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"]
 
 app.add_middleware(
     CORSMiddleware,

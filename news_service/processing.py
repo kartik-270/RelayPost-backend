@@ -1,10 +1,12 @@
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from database import SessionLocal
 import models
 import numpy as np
 import os
+from datetime import datetime, timedelta
 import google.generativeai as genai
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -14,8 +16,12 @@ if GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here":
 def update_article_clusters():
     db = SessionLocal()
     try:
-        # Get unclustered articles from the last 24 hours
-        articles = db.query(models.Article).filter(models.Article.cluster_id == None).all()
+        # Only cluster articles ingested in the last 12 hours to prevent stale mixing
+        cutoff = datetime.utcnow() - timedelta(hours=12)
+        articles = db.query(models.Article).filter(
+            models.Article.cluster_id == None,
+            models.Article.created_at >= cutoff
+        ).all()
         if len(articles) < 2:
             return
         
@@ -38,19 +44,21 @@ def update_article_clusters():
             visited.add(i)
             
             for j in range(i + 1, len(articles)):
-                if similarity_matrix[i][j] > 0.5:
+                if j not in visited and similarity_matrix[i][j] > 0.65:
                     cluster.append(j)
                     visited.add(j)
             
             clusters.append(cluster)
             
-        # Get the max cluster_id from DB to ensure uniqueness
-        max_cluster_id_result = db.query(models.Article).order_by(models.Article.cluster_id.desc()).first()
-        current_cluster_id = 1
-        if max_cluster_id_result and max_cluster_id_result.cluster_id is not None:
-             current_cluster_id = max_cluster_id_result.cluster_id + 1
+        # Ensure the sequence exists (PostgreSQL specific)
+        db.execute(text("CREATE SEQUENCE IF NOT EXISTS article_cluster_id_seq START WITH 1;"))
+        db.commit()
         
         for cluster_indices in clusters:
+            # Fetch next cluster ID atomically
+            result = db.execute(text("SELECT nextval('article_cluster_id_seq')"))
+            current_cluster_id = result.scalar()
+            
             for idx in cluster_indices:
                 articles[idx].cluster_id = current_cluster_id
                 
@@ -58,8 +66,6 @@ def update_article_clusters():
                 title_words = set(articles[idx].title.lower().split())
                 # Just mock keywords for now
                 articles[idx].keywords = list(title_words)[:5] 
-            
-            current_cluster_id += 1
             
         db.commit()
     except Exception as e:
@@ -117,6 +123,7 @@ def generate_ai_summaries():
                 "factual, and coherent. Synthesize a single refined, highly structured narrative as a detailed 'full_analysis'. "
                 "The 'full_analysis' MUST be formatted as rich HTML (using <h2>, <h3>, <p>, <ul>, <li>, <strong>, <blockquote>) so it reads like a premium, deep-dive article from the Content Engine. Include an engaging introduction, structured body paragraphs with subheadings, and a conclusive summary.\n"
                 "Also generate a short 'ai_summary' (plain text), a URL-friendly 'slug', an SEO title (max 60 chars), an SEO meta description (max 160 chars), and a specific 'category' (e.g. 'Cybersecurity', 'Startups', 'Politics', 'Healthcare', rather than generic ones).\n\n"
+                "CRITICAL: The generated 'full_analysis', 'ai_summary', 'slug', 'meta_title', 'meta_description', and 'category' MUST be strictly based ON and ONLY ON the provided news reports in the 'Context' section below. Do not introduce any external news stories, topics, or facts that are not present in the Context. If the context is empty or completely incoherent, set 'is_genuine' to false and return generic placeholders.\n\n"
                 "Return the response in pure JSON format with these exact keys: "
                 "'is_genuine' (boolean), 'category' (string), 'ai_summary', 'full_analysis' (HTML string), 'slug', 'meta_title', 'meta_description'.\n\n"
                 f"Context:\n{context_text}"

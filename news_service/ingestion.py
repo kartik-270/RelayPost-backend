@@ -1,6 +1,7 @@
 import os
+import html
 import feedparser
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 import models
 from database import SessionLocal
@@ -52,10 +53,18 @@ RSS_FEEDS = {
     ]
 }
 
-def process_and_store_articles():
+def process_and_store_articles(page: int = 1, page_size: int = 10):
+    """
+    Ingest articles from all RSS feeds.
+    :param page: Which "page" of results to fetch (1-indexed). Each page fetches `page_size` entries per feed.
+    :param page_size: Number of entries per feed per page (default 10).
+    """
     db = SessionLocal()
     seen_urls = set()
     
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+
     # Configure newspaper parser with a browser-like user agent to bypass WAF / Cloudflare blocks
     config = NewspaperConfig()
     config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -64,12 +73,12 @@ def process_and_store_articles():
     try:
         for category, feeds in RSS_FEEDS.items():
             for feed_url in feeds:
-                print(f"Parsing feed: {feed_url}")
+                print(f"Parsing feed (page={page}): {feed_url}")
                 try:
                     parsed_feed = feedparser.parse(feed_url)
                     source_title = parsed_feed.feed.get("title", "Unknown Source")
                     
-                    for entry in parsed_feed.entries[:5]: # limit to 5 per feed to avoid overload
+                    for entry in parsed_feed.entries[start_index:end_index]:
                         url = entry.get("link")
                         if not url or not entry.get("title"):
                             continue
@@ -112,7 +121,8 @@ def process_and_store_articles():
                             print(f"Failed to extract full content for {url}: {e}")
                         
                         # Use feed description if extraction fails or as description
-                        description = entry.get("description", "")
+                        # Decode HTML entities in description too
+                        description = html.unescape(entry.get("description", "") or "")
                         if not description and content:
                             description = content[:200] + "..."
                         elif not content:
@@ -126,7 +136,8 @@ def process_and_store_articles():
                             except:
                                 pass
                                 
-                        title = entry.get("title")
+                        # Decode HTML entities in title (e.g. &#8217; -> ')
+                        title = html.unescape(entry.get("title", ""))
                         
                         import re
                         import uuid

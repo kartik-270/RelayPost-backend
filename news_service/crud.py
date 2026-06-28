@@ -59,7 +59,7 @@ def get_articles(
     
     return items, total
 
-def get_latest_articles(db: Session, limit: int = 50, is_verified: Optional[bool] = True):
+def get_latest_articles(db: Session, limit: int = 50, skip: int = 0, is_verified: Optional[bool] = True):
     query = db.query(models.Article)
     if is_verified is not None:
         query = query.filter(models.Article.is_verified == is_verified)
@@ -67,7 +67,13 @@ def get_latest_articles(db: Session, limit: int = 50, is_verified: Optional[bool
         desc(models.Article.title.ilike('%india%')),
         desc(models.Article.description.ilike('%india%')),
         desc(models.Article.published_at)
-    ).limit(limit).all()
+    ).offset(skip).limit(limit).all()
+
+def count_articles(db: Session, is_verified: Optional[bool] = True):
+    query = db.query(models.Article)
+    if is_verified is not None:
+        query = query.filter(models.Article.is_verified == is_verified)
+    return query.count()
 
 def get_clustered_articles(db: Session, cluster_id: int, is_verified: Optional[bool] = True):
     query = db.query(models.Article).filter(models.Article.cluster_id == cluster_id)
