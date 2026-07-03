@@ -47,7 +47,7 @@ class TavilyTool:
 class GeminiTool:
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
-        self.model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-pro")
+        self.model_name = "gemma-4-31b-it"
         if self.api_key:
             genai.configure(api_key=self.api_key)
             print(f"[GEMINI] Selected model: {self.model_name}")
