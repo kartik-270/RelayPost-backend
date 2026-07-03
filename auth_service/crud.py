@@ -10,6 +10,10 @@ def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.email == email).first()
 
 def create_user(db: Session, user: UserCreate, hashed_password: str = None, google_id: str = None):
+    # If Google ID is provided, automatically verify the user
+    is_verified = True if google_id else False
+    verification_token = None if google_id else str(uuid.uuid4())
+
     db_user = models.User(
         email=user.email,
         hashed_password=hashed_password,
@@ -18,11 +22,25 @@ def create_user(db: Session, user: UserCreate, hashed_password: str = None, goog
         avatar=user.avatar,
         bio=user.bio,
         specialization=user.specialization,
-        role=user.role if user.role else models.RoleEnum.VIEWER
+        role=user.role if user.role else models.RoleEnum.VIEWER,
+        is_verified=is_verified,
+        verification_token=verification_token
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    return db_user
+
+def get_user_by_verification_token(db: Session, token: str):
+    return db.query(models.User).filter(models.User.verification_token == token).first()
+
+def verify_user(db: Session, user_id: uuid.UUID):
+    db_user = get_user(db, user_id)
+    if db_user:
+        db_user.is_verified = True
+        db_user.verification_token = None
+        db.commit()
+        db.refresh(db_user)
     return db_user
 
 def get_users(db: Session, skip: int = 0, limit: int = 100, role: models.RoleEnum = None):

@@ -62,27 +62,71 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "your-google-client-id")
 class GoogleAuthRequest(BaseModel):
     token: str
 
-@app.post("/auth/register", response_model=schemas.UserResponse)
-def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+@app.post("/auth/register", response_model=schemas.UserResponse, status_code=201)
+async def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     hashed_password = get_password_hash(user.password) if user.password else None
-    return crud.create_user(db=db, user=user, hashed_password=hashed_password)
+    new_user = crud.create_user(db=db, user=user, hashed_password=hashed_password)
+    
+    # Send verification email if not google auth
+    if not new_user.is_verified and new_user.verification_token:
+        await mail_utils.send_verification_email(new_user.email, new_user.verification_token)
+        
+    return new_user
 
 @app.post("/auth/token", response_model=schemas.Token)
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, email=form_data.username)
     if not user or not user.hashed_password:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
     if not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
     
+    if not user.is_verified:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="NOT_VERIFIED")
+    
     access_token_expires = timedelta(minutes=60*24)
     access_token = create_access_token(
         data={"sub": str(user.id), "email": user.email, "role": user.role.value}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+@app.post("/auth/verify", response_model=schemas.Token)
+def verify_email(payload: schemas.VerifyRequest, db: Session = Depends(get_db)):
+    user = crud.get_user_by_verification_token(db, payload.token)
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+    
+    verified_user = crud.verify_user(db, user.id)
+    
+    access_token_expires = timedelta(minutes=60*24)
+    access_token = create_access_token(
+        data={"sub": str(verified_user.id), "email": verified_user.email, "role": verified_user.role.value}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+class ResendRequest(BaseModel):
+    email: str
+
+@app.post("/auth/resend-verification")
+async def resend_verification(payload: ResendRequest, db: Session = Depends(get_db)):
+    user = crud.get_user_by_email(db, email=payload.email)
+    if not user:
+        # Don't reveal if user exists
+        return {"msg": "If an unverified account exists, an email was sent"}
+    
+    if user.is_verified:
+        return {"msg": "Account is already verified"}
+        
+    if not user.verification_token:
+        # Generate new token if it doesn't exist
+        user.verification_token = str(uuid.uuid4())
+        db.commit()
+        
+    await mail_utils.send_verification_email(user.email, user.verification_token)
+    return {"msg": "Verification email sent"}
 
 @app.post("/auth/google")
 def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):

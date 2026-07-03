@@ -29,6 +29,7 @@ class UserResponse(UserBase):
     role: RoleEnum
     is_active: bool
     is_deleted: bool
+    is_verified: bool
     created_at: Optional[datetime] = None
     
     class Config:
@@ -41,6 +42,9 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
     role: Optional[RoleEnum] = None
+
+class VerifyRequest(BaseModel):
+    token: str
 
 class InviteCreate(BaseModel):
     email: EmailStr

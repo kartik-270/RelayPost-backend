@@ -61,3 +61,36 @@ async def send_invite_email(email: str, token: str):
         # Log the link anyway for the user in the console
         print(f"DEBUG: Invitation Link: {invite_url}")
         return False
+
+async def send_verification_email(email: str, token: str):
+    verify_url = f"{Envs.FRONTEND_URL}/verify?token={token}"
+    
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; rounded-xl: 16px;">
+        <h2 style="color: #4f46e5;">Verify your Email for RelayPost</h2>
+        <p>Thank you for registering. Please click the button below to verify your email and securely access your intelligence dashboard:</p>
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{verify_url}" style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">Verify Email</a>
+        </div>
+        <p style="font-size: 12px; color: #64748b;">If the button doesn't work, copy and paste this link into your browser:</p>
+        <p style="font-size: 12px; color: #4f46e5;">{verify_url}</p>
+    </div>
+    """
+
+    message = MessageSchema(
+        subject="Verify your RelayPost Account",
+        recipients=[email],
+        body=html,
+        subtype=MessageType.html
+    )
+
+    fm = FastMail(conf)
+    try:
+        await fm.send_message(message)
+        print(f"SUCCESS: Verification email sent to {email}")
+        return True
+    except Exception as e:
+        print(f"ERROR: Failed to send email to {email}: {e}")
+        # Log the link anyway for the user in the console
+        print(f"DEBUG: Verification Link: {verify_url}")
+        return False
