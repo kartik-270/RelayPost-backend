@@ -15,7 +15,7 @@ Focus on topics that:
 - Draw from a wide spectrum of human interests: science, culture, health, money, food, sports, history, psychology, environment, politics, and more
 
 CATEGORY WHEEL (MANDATORY ROTATION):
-Every batch of 3 topics MUST span 3 DIFFERENT categories. No two topics in the same batch may share a category:
+Every batch of 3 topics MUST span 3 DIFFERENT categories. You MUST give equal preference to all the categories and MUST choose different categories across consecutive runs, avoiding repetition of the same categories every time. No two topics in the same batch may share a category:
 
   1. Health & Medicine         — breakthroughs, mental health, longevity, nutrition science, public health
   2. Science & Nature          — space, biology, physics, climate systems, ecology, animal behavior
@@ -104,6 +104,9 @@ TITLE CRAFT RULES:
 
 CATEGORIES AVAILABLE:
 {categories}
+
+RECENT CATEGORIES USED (AVOID REPEATING THESE IF POSSIBLE):
+{existing_categories}
 
 AVAILABLE KEYWORDS (PREFER REUSING THESE):
 {existing_keywords}

@@ -34,9 +34,10 @@ class ArticleAutomationEngine:
             # 1. Topic Research (Gemini brainstorming)
             categories = [c.name for c in crud.get_categories(self.db)]
             
-            # Fetch recent titles to avoid duplicates
+            # Fetch recent titles and categories to avoid duplicates and repeating categories
             recent_articles = self.db.query(models.Article).order_by(models.Article.created_at.desc()).limit(20).all()
             existing_topics = [a.title for a in recent_articles]
+            existing_categories = list(set([a.category_name for a in recent_articles if a.category_name]))
 
             # Fetch a sample of keywords to encourage reuse
             keywords_list = self.db.query(models.Keyword).order_by(func.random()).limit(40).all()
@@ -53,6 +54,7 @@ class ArticleAutomationEngine:
                 dynamic_instructions=dynamic_topic,
                 categories=", ".join(categories),
                 existing_topics=", ".join(existing_topics) if existing_topics else "None",
+                existing_categories=", ".join(existing_categories) if existing_categories else "None",
                 existing_keywords=existing_keywords if existing_keywords else "None"
             )
             brainstorm_result = await self.gemini.generate_structured(brainstorm_prompt, temperature=0.9)
