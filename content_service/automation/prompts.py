@@ -159,6 +159,8 @@ YOUR PERSONA (ADAPT BASED ON TEMPLATE):
 CONTENT_GENERATION_CORE_PROMPT = """
 You are a world-class investigative journalist and industry expert writing for a global audience. 
 
+ASSIGNED TOPIC: {title}
+CATEGORY: {category}
 TEMPLATE TYPE: {template_type}
 
 {dynamic_instructions}

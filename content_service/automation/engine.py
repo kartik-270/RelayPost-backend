@@ -103,7 +103,9 @@ class ArticleAutomationEngine:
             gen_prompt = CONTENT_GENERATION_CORE_PROMPT.format(
                 dynamic_instructions=self.current_content_prompt,
                 research_data=str(research_data),
-                template_type=template_type
+                template_type=template_type,
+                title=title,
+                category=category_name
             )
             article_data = await self.gemini.generate_structured(gen_prompt, temperature=0.7)
             if isinstance(article_data, list) and len(article_data) > 0:
