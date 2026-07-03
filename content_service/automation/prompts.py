@@ -171,15 +171,17 @@ RESEARCH DATA:
 ARTICLE REQUIREMENTS (COHERENCE & STRUCTURE):
 1. **Unified Narrative**: The article must feel like a single, cohesive story.
 2. **Factual Grounding**: cite specific triggers, dates, and outcomes from the research.
-3. **Template-Specific Logic**:
+3. **Length & Depth (CRITICAL)**: The generated article MUST be comprehensive and highly detailed, targeting between 800 and 1500 words. Do NOT write brief, superficial summaries. Each paragraph block must be substantial (at least 4-6 sentences) and fully explore the nuance of the research.
+   - **ANTI-FLUFF RULE**: If the research data is sparse, DO NOT hallucinate unrelated facts, go off-topic, or stitch together unrelated news just to hit the word count. Stay 100% focused on the ASSIGNED TOPIC. Expand by providing deeper analysis, context, and implications of the actual data provided, NOT by inventing filler.
+4. **Template-Specific Logic**:
    - **standard**: Focus on the 'Why'. Build a case for a major shift. Use at least 1 complex data table.
    - **guide**: Focus on the 'How'. Start with a "Prerequisites" or "What You'll Need" section. Use `numbered_list` for steps. End with a "Common Pitfalls" section.
    - **trend**: Focus on the 'When'. Emphasize what happened this week/month. Compare current data to 6-12 months ago to show the "Delta".
-4. **Data Density**: Include at least 3-5 specific statistics (marke valuations, percentages, etc.).
-5. **Structural Flow**:
+5. **Data Density**: Include at least 3-5 specific statistics (market valuations, percentages, etc.).
+6. **Structural Flow**:
    - Title: Magnetic, H1-worthy.
    - Subtitle: Catchy tagline.
-   - Content Blocks: 10-15 diverse blocks.
+   - Content Blocks: 15-25 diverse blocks (ensure paragraphs are long and detailed).
    - Bridge Sentences: Every 2-3 blocks, include a transition sentence.
 
 --- EDITORIAL GOVERNANCE ---
