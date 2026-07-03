@@ -23,7 +23,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, R
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func
+from sqlalchemy import func, text
 import uuid
 from typing import List, Optional
 
@@ -322,19 +322,87 @@ from database import SessionLocal as AutomationSessionLocal
 
 @app.post("/admin/ai/trigger-automation")
 async def trigger_automation_manually(background_tasks: BackgroundTasks, current_user: TokenData = Depends(get_current_admin)):
+    db = AutomationSessionLocal()
+    has_lock = db.execute(text("SELECT pg_try_advisory_lock(1001)")).scalar()
+    if not has_lock:
+        db.close()
+        raise HTTPException(status_code=409, detail="Automation is currently running. Please wait.")
+    db.execute(text("SELECT pg_advisory_unlock(1001)"))
+    db.commit()
+    db.close()
+
     batch_size = int(os.getenv("AUTOMATION_BATCH_SIZE", "3"))  # Default 3 articles per run
     print(f"[Trigger] Using batch_size={batch_size}")
     
     async def run_engine():
-        db = AutomationSessionLocal()
+        bg_db = AutomationSessionLocal()
+        lock_acquired = bg_db.execute(text("SELECT pg_try_advisory_lock(1001)")).scalar()
+        if not lock_acquired:
+            bg_db.close()
+            return
+            
         try:
-            engine = ArticleAutomationEngine(db)
+            engine = ArticleAutomationEngine(bg_db)
             await engine.run_pipeline(batch_size=batch_size)
         finally:
-            db.close()
+            bg_db.execute(text("SELECT pg_advisory_unlock(1001)"))
+            bg_db.commit()
+            bg_db.close()
         
     background_tasks.add_task(run_engine)
     return {"message": f"Automation triggered in background for {batch_size} articles."}
+
+@app.post("/admin/ai/trigger-topic")
+async def trigger_topic_manually(payload: dict, background_tasks: BackgroundTasks, current_user: TokenData = Depends(get_current_admin)):
+    topic = payload.get("topic")
+    category = payload.get("category", "Intelligence")
+    search_queries_str = payload.get("search_queries", "")
+    
+    if not topic:
+        raise HTTPException(status_code=400, detail="Topic is required")
+
+    # Process search queries
+    parsed_queries = [q.strip() for q in search_queries_str.split(",")] if search_queries_str.strip() else []
+    final_queries = parsed_queries if parsed_queries else [topic]
+
+    db = AutomationSessionLocal()
+    has_lock = db.execute(text("SELECT pg_try_advisory_lock(1001)")).scalar()
+    if not has_lock:
+        db.close()
+        raise HTTPException(status_code=409, detail="Automation is currently running. Please wait.")
+    db.execute(text("SELECT pg_advisory_unlock(1001)")) 
+    db.commit()
+    db.close()
+
+    async def run_engine_topic():
+        bg_db = AutomationSessionLocal()
+        lock_acquired = bg_db.execute(text("SELECT pg_try_advisory_lock(1001)")).scalar()
+        if not lock_acquired:
+            bg_db.close()
+            return
+            
+        try:
+            engine = ArticleAutomationEngine(bg_db)
+            topic_info = {
+                "title": topic,
+                "search_queries": final_queries,
+                "category": category,
+                "template_type": "standard"
+            }
+            
+            from crud import get_latest_prompt_version
+            latest_prompt = get_latest_prompt_version(bg_db)
+            from automation.prompts import CONTENT_GENERATION_DYNAMIC_PROMPT
+            engine.current_content_prompt = latest_prompt.content_generation_dynamic if latest_prompt else CONTENT_GENERATION_DYNAMIC_PROMPT
+            
+            await engine.process_single_topic(topic_info)
+        finally:
+            bg_db.execute(text("SELECT pg_advisory_unlock(1001)"))
+            bg_db.commit()
+            bg_db.close()
+            
+    background_tasks.add_task(run_engine_topic)
+    return {"message": f"Generation for topic '{topic}' triggered in background."}
 
 @app.post("/admin/automation/pause")
 async def pause_automation(current_user: TokenData = Depends(get_current_admin)):
