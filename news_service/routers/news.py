@@ -30,13 +30,13 @@ def trigger_engine():
 
 @router.get("/live")
 def get_live_feed(
-    skip: int = 0, limit: int = 20, is_admin: bool = False, db: Session = Depends(get_db)
+    skip: int = 0, limit: int = 20, search: Optional[str] = None, is_admin: bool = False, db: Session = Depends(get_db)
 ):
     """Get the most recent unstructured live feed of news"""
     from fastapi.responses import JSONResponse
     is_verified = None if is_admin else True
-    articles = crud.get_latest_articles(db, limit=limit, skip=skip, is_verified=is_verified)
-    total = crud.count_articles(db, is_verified=is_verified)
+    articles = crud.get_latest_articles(db, limit=limit, skip=skip, is_verified=is_verified, search=search)
+    total = crud.count_articles(db, is_verified=is_verified, search=search)
     return JSONResponse(
         content=[{c.name: getattr(a, c.name).__str__() if not isinstance(getattr(a, c.name), (str, int, float, bool, type(None), list)) else getattr(a, c.name) for c in a.__table__.columns} for a in articles],
         headers={"X-Total-Count": str(total), "Access-Control-Expose-Headers": "X-Total-Count"}
@@ -151,6 +151,8 @@ def delete_news_article(article_id: int, db: Session = Depends(get_db)):
 def get_news_categories(db: Session = Depends(get_db)):
     """Get all unique news categories"""
     return crud.get_unique_categories(db)
+
+
 
 @router.get("/rss")
 def get_rss_feed(db: Session = Depends(get_db)):

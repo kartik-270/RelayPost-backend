@@ -57,18 +57,36 @@ def get_articles(
     
     return items, total
 
-def get_latest_articles(db: Session, limit: int = 50, skip: int = 0, is_verified: Optional[bool] = True):
+def get_latest_articles(db: Session, limit: int = 50, skip: int = 0, is_verified: Optional[bool] = True, search: Optional[str] = None):
     query = db.query(models.Article)
     if is_verified is not None:
         query = query.filter(models.Article.is_verified == is_verified)
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                models.Article.title.ilike(search_term),
+                models.Article.description.ilike(search_term),
+                func.cast(models.Article.keywords, String).ilike(search_term)
+            )
+        )
     return query.order_by(
         desc(models.Article.published_at)
     ).offset(skip).limit(limit).all()
 
-def count_articles(db: Session, is_verified: Optional[bool] = True):
+def count_articles(db: Session, is_verified: Optional[bool] = True, search: Optional[str] = None):
     query = db.query(models.Article)
     if is_verified is not None:
         query = query.filter(models.Article.is_verified == is_verified)
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                models.Article.title.ilike(search_term),
+                models.Article.description.ilike(search_term),
+                func.cast(models.Article.keywords, String).ilike(search_term)
+            )
+        )
     return query.count()
 
 def get_clustered_articles(db: Session, cluster_id: int, is_verified: Optional[bool] = True):
