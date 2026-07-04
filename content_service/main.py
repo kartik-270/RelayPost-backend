@@ -187,6 +187,10 @@ def get_homepage_category_sections(limit: int = 10, categories: Optional[List[st
 def get_public_keywords(limit: Optional[int] = None, db: Session = Depends(get_db)):
     return crud.get_keywords(db, limit=limit)
 
+@app.get("/public/meta/popular-keywords", response_model=List[str])
+def get_popular_string_keywords(limit: int = 10, db: Session = Depends(get_db)):
+    return crud.get_popular_string_keywords(db, limit=limit)
+
 @app.post("/public/newsletter/subscribe")
 def subscribe_newsletter(sub: schemas.NewsletterCreate, db: Session = Depends(get_db)):
     crud.subscribe_newsletter(db, sub.email)

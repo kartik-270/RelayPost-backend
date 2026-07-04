@@ -34,14 +34,40 @@ def get_keywords(db: Session, limit: Optional[int] = None):
         query = query.limit(limit)
     keywords = query.all()
     # Compute article counts
+    articles = db.query(models.Article.secondary_keywords).filter(
+        models.Article.status == models.ArticleStatus.PUBLISHED,
+        models.Article.deleted_at == None
+    ).all()
+    counts = {}
+    for a in articles:
+        if a.secondary_keywords:
+            for kw in a.secondary_keywords:
+                k = kw.lower()
+                counts[k] = counts.get(k, 0) + 1
+                
     for kw in keywords:
-        count = db.query(models.Article).join(models.article_keyword_link).filter(
-            models.article_keyword_link.c.keyword_id == kw.id,
-            models.Article.status == models.ArticleStatus.PUBLISHED,
-            models.Article.deleted_at == None
-        ).count()
-        kw.article_count = count
+        kw.article_count = counts.get(kw.tag.lower(), 0)
     return keywords
+
+def get_popular_string_keywords(db: Session, limit: int = 10):
+    articles = db.query(models.Article.secondary_keywords).filter(
+        models.Article.status == models.ArticleStatus.PUBLISHED,
+        models.Article.deleted_at == None
+    ).all()
+    
+    counts = {}
+    casing = {}
+    for a in articles:
+        if a.secondary_keywords:
+            for kw in a.secondary_keywords:
+                k = kw.lower()
+                counts[k] = counts.get(k, 0) + 1
+                if k not in casing:
+                    casing[k] = kw
+    
+    popular = [{"tag": casing[k], "count": v} for k, v in counts.items() if v >= 5]
+    popular.sort(key=lambda x: x["count"], reverse=True)
+    return [p["tag"] for p in popular[:limit]]
 
 def get_or_create_category(db: Session, name: str):
     if not name: return None
@@ -132,8 +158,9 @@ def get_articles(db: Session, skip: int = 0, limit: int = 25, status: models.Art
     return items, total
 
 def get_articles_by_keyword(db: Session, tag: str, skip: int = 0, limit: int = 20):
-    query = db.query(models.Article).join(models.article_keyword_link).join(models.Keyword).filter(
-        models.Keyword.tag == tag,
+    from sqlalchemy import text
+    query = db.query(models.Article).filter(
+        text("EXISTS (SELECT 1 FROM unnest(secondary_keywords) k WHERE lower(k) = lower(:tag))").bindparams(tag=tag),
         models.Article.status == models.ArticleStatus.PUBLISHED,
         models.Article.deleted_at == None
     )
