@@ -120,13 +120,15 @@ def generate_ai_summaries():
             prompt = (
                 "You are an expert news editor, SEO specialist, and fact-checker. Analyze the following grouped "
                 "news reports. First, determine if the information across these sources appears to be genuine, "
-                "factual, and coherent. Synthesize a single refined, highly structured narrative as a detailed 'full_analysis'. "
-                "The 'full_analysis' MUST be formatted as rich HTML (using <h2>, <h3>, <p>, <ul>, <li>, <strong>, <blockquote>) so it reads like a premium, deep-dive article from the Content Engine. Include an engaging introduction, structured body paragraphs with subheadings, and a conclusive summary.\n"
+                "factual, and coherent. Synthesize a highly detailed, deeply analyzed, and comprehensive narrative as 'full_analysis'. "
+                "The 'full_analysis' MUST be at least 5-7 long paragraphs. To achieve this length, you must expand upon the context by providing relevant background information, explaining the broader implications of the event, discussing historical context, and predicting future trends based on your expert knowledge.\n"
+                "CRITICAL RELEVANCE RULE: While you must use your expert knowledge to expand on the topic, your entire analysis MUST remain explicitly and strictly anchored to the specific news event provided in the 'Context' below. Do NOT pivot to unrelated news stories or hallucinate events that did not happen. Every paragraph must directly tie back to explaining or analyzing the core news event.\n"
+                "HALLUCINATION SAFETY VALVE: If the provided news event is highly niche, hyper-local, or you possess absolutely zero prior world knowledge about it, DO NOT invent facts or history just to reach the 5-7 paragraph length. In this specific case, write a shorter, concise analysis strictly based on the provided context to guarantee 100% factual accuracy.\n"
+                "IMPORTANT FORMATTING: The 'full_analysis' MUST be formatted as standard Markdown (using ##, ###, **, *, -, >) so it renders perfectly in our frontend. Do NOT use HTML tags. Include an engaging introduction, deeply analytical body paragraphs with subheadings, and a conclusive summary.\n"
                 "Also generate a short 'ai_summary' (plain text), a URL-friendly 'slug', an SEO title (max 60 chars), an SEO meta description (max 160 chars), and a specific 'category'.\n\n"
                 "CRITICAL CATEGORY RULE: You MUST choose the category from this EXACT list: ['World News', 'Politics', 'Business', 'Technology', 'Science', 'Health', 'Sports', 'Entertainment']. Do not invent or use any other category names.\n\n"
-                "CRITICAL: The generated 'full_analysis', 'ai_summary', 'slug', 'meta_title', 'meta_description', and 'category' MUST be strictly based ON and ONLY ON the provided news reports in the 'Context' section below. Do not introduce any external news stories, topics, or facts that are not present in the Context. If the context is empty or completely incoherent, set 'is_genuine' to false and return generic placeholders.\n\n"
                 "Return the response in pure JSON format with these exact keys: "
-                "'is_genuine' (boolean), 'category' (string), 'ai_summary', 'full_analysis' (HTML string), 'slug', 'meta_title', 'meta_description'.\n\n"
+                "'is_genuine' (boolean), 'category' (string), 'ai_summary', 'full_analysis' (Markdown string), 'slug', 'meta_title', 'meta_description'.\n\n"
                 f"Context:\n{context_text}"
             )
 

@@ -52,8 +52,6 @@ def get_articles(
 
     total = query.count()
     items = query.order_by(
-        desc(models.Article.title.ilike('%india%')),
-        desc(models.Article.description.ilike('%india%')),
         desc(models.Article.published_at)
     ).offset(skip).limit(limit).all()
     
@@ -64,8 +62,6 @@ def get_latest_articles(db: Session, limit: int = 50, skip: int = 0, is_verified
     if is_verified is not None:
         query = query.filter(models.Article.is_verified == is_verified)
     return query.order_by(
-        desc(models.Article.title.ilike('%india%')),
-        desc(models.Article.description.ilike('%india%')),
         desc(models.Article.published_at)
     ).offset(skip).limit(limit).all()
 
