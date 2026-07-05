@@ -71,3 +71,21 @@ class AuthStats(BaseModel):
     admin_count: int
     publisher_count: int
     viewer_count: int
+
+class CreateOrderRequest(BaseModel):
+    amount: int = Field(..., ge=100, le=5000000, description="Amount in paise (min 100, max 5000000)")
+
+class CreateOrderResponse(BaseModel):
+    order_id: str
+    amount: int
+    currency: str
+
+class VerifyPaymentRequest(BaseModel):
+    razorpay_payment_id: str
+    razorpay_order_id: str
+    razorpay_signature: str
+
+class VerifyPaymentResponse(BaseModel):
+    status: str
+    message: str
+

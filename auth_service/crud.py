@@ -107,3 +107,28 @@ def get_auth_stats(db: Session):
         "publisher_count": publishers,
         "viewer_count": viewers
     }
+
+# --- Contributions ---
+def create_contribution(db: Session, user_id: uuid.UUID, amount: int, currency: str, razorpay_order_id: str):
+    db_contribution = models.Contribution(
+        user_id=user_id,
+        amount=amount,
+        currency=currency,
+        razorpay_order_id=razorpay_order_id,
+        status="PENDING"
+    )
+    db.add(db_contribution)
+    db.commit()
+    db.refresh(db_contribution)
+    return db_contribution
+
+def get_contribution_by_order_id(db: Session, razorpay_order_id: str):
+    return db.query(models.Contribution).filter(models.Contribution.razorpay_order_id == razorpay_order_id).first()
+
+def update_contribution_status(db: Session, db_contribution: models.Contribution, status: str, razorpay_payment_id: str = None):
+    db_contribution.status = status
+    if razorpay_payment_id:
+        db_contribution.razorpay_payment_id = razorpay_payment_id
+    db.commit()
+    db.refresh(db_contribution)
+    return db_contribution

@@ -2,8 +2,12 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, status, Response
+from fastapi import FastAPI, Depends, HTTPException, status, Response, Request
 from typing import List
+import uuid
+import hmac
+import hashlib
+import razorpay
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -248,3 +252,102 @@ def get_auth_statistics(current_user: models.User = Depends(get_current_active_u
     if current_user.role != models.RoleEnum.ADMIN:
         raise HTTPException(status_code=403, detail="Access denied")
     return crud.get_auth_stats(db)
+
+# --- PAYMENT ROUTES ---
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET")
+RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET")
+
+if RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
+    rzp_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+else:
+    rzp_client = None
+
+@app.post("/auth/payment/create-order", response_model=schemas.CreateOrderResponse)
+def create_payment_order(payload: schemas.CreateOrderRequest, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    if not rzp_client:
+        raise HTTPException(status_code=500, detail="Razorpay is not configured")
+    
+    amount = payload.amount
+    if not (100 <= amount <= 5000000):
+        raise HTTPException(status_code=400, detail="Amount must be between 100 and 5000000 paise")
+
+    try:
+        order_data = {
+            "amount": amount,
+            "currency": "INR",
+            "receipt": f"rcpt_{str(current_user.id)[:8]}_{str(uuid.uuid4())[:8]}",
+            "payment_capture": 1
+        }
+        order = rzp_client.order.create(data=order_data)
+        
+        crud.create_contribution(db, current_user.id, amount, "INR", order["id"])
+        
+        return {
+            "order_id": order["id"],
+            "amount": order["amount"],
+            "currency": order["currency"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/auth/payment/verify", response_model=schemas.VerifyPaymentResponse)
+def verify_payment(payload: schemas.VerifyPaymentRequest, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
+    db_contribution = crud.get_contribution_by_order_id(db, payload.razorpay_order_id)
+    if not db_contribution:
+        raise HTTPException(status_code=404, detail="Order not found")
+        
+    if db_contribution.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not your order")
+
+    # Verify signature
+    msg = f"{payload.razorpay_order_id}|{payload.razorpay_payment_id}"
+    generated_signature = hmac.new(
+        RAZORPAY_KEY_SECRET.encode('utf-8'),
+        msg.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+
+    if generated_signature != payload.razorpay_signature:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # Double check amount from razorpay
+    try:
+        rzp_order = rzp_client.order.fetch(payload.razorpay_order_id)
+        if rzp_order["amount"] != db_contribution.amount:
+            raise HTTPException(status_code=400, detail="Amount mismatch detected")
+            
+        crud.update_contribution_status(db, db_contribution, "SUCCESS", payload.razorpay_payment_id)
+        return {"status": "SUCCESS", "message": "Payment verified successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/auth/payment/webhook")
+async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
+    body = await request.body()
+    signature = request.headers.get("X-Razorpay-Signature")
+    
+    if not signature or not RAZORPAY_WEBHOOK_SECRET:
+        raise HTTPException(status_code=400, detail="Missing signature or webhook secret")
+
+    try:
+        rzp_client.utility.verify_webhook_signature(body.decode('utf-8'), signature, RAZORPAY_WEBHOOK_SECRET)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    payload = await request.json()
+    event = payload.get("event")
+
+    if event in ["payment.captured", "payment.failed"]:
+        payment = payload["payload"]["payment"]["entity"]
+        order_id = payment.get("order_id")
+        payment_id = payment.get("id")
+        status = "SUCCESS" if event == "payment.captured" else "FAILED"
+        
+        db_contribution = crud.get_contribution_by_order_id(db, order_id)
+        if db_contribution:
+            # Idempotency: only update if not already SUCCESS
+            if db_contribution.status != "SUCCESS" or status == "SUCCESS":
+                crud.update_contribution_status(db, db_contribution, status, payment_id)
+
+    return {"status": "ok"}

@@ -1,6 +1,6 @@
 import enum
 import uuid
-from sqlalchemy import Column, String, Boolean, Enum, DateTime, func
+from sqlalchemy import Column, String, Boolean, Enum, DateTime, func, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from database import Base
 
@@ -41,3 +41,17 @@ class Invite(Base):
     is_used = Column(Boolean, default=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Contribution(Base):
+    __tablename__ = "contributions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), index=True, nullable=False) # Must be linked to a user
+    amount = Column(Integer, nullable=False) # In paise
+    currency = Column(String, default="INR", nullable=False)
+    razorpay_order_id = Column(String, unique=True, index=True, nullable=False)
+    razorpay_payment_id = Column(String, nullable=True)
+    status = Column(String, default="PENDING", nullable=False) # PENDING, SUCCESS, FAILED
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
