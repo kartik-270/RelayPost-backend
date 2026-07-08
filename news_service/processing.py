@@ -101,8 +101,10 @@ def generate_ai_summaries():
                 cluster_map[article.cluster_id] = []
             cluster_map[article.cluster_id].append(article)
             
-        model_name = os.getenv("GEMINI_MODEL_NAME", "gemma-4-26b-a4b-it")
+        model_name = os.getenv("GEMINI_MODEL_NAME", "gemma-4-31b-it")
+        fallback_model_name = "gemma-4-26b-a4b-it"
         model = genai.GenerativeModel(model_name)
+        rate_limit_hits = 0
         import time
         import re
 
@@ -240,15 +242,25 @@ def generate_ai_summaries():
                 except Exception as e:
                     error_msg = str(e)
                     print(f"Gemini Generation Attempt {attempt + 1} Failed for cluster {cluster_id}: {error_msg[:200]}")
-                    if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg and attempt < max_retries - 1:
-                        import re
-                        match = (
-                            re.search(r'Please retry in (\d+)', error_msg) or
-                            re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', error_msg)
-                        )
-                        wait_time = int(match.group(1)) + 5 if match else 60 * (attempt + 1)
-                        print(f"Rate limited. Retrying in {wait_time} seconds...")
-                        time.sleep(wait_time)
+                    if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                        rate_limit_hits += 1
+                        if rate_limit_hits > 3 and model_name != fallback_model_name:
+                            print(f"Hit rate limit {rate_limit_hits} times, falling back to {fallback_model_name}")
+                            model_name = fallback_model_name
+                            model = genai.GenerativeModel(model_name)
+                            rate_limit_hits = 0  # reset after fallback
+                        
+                        if attempt < max_retries - 1:
+                            import re
+                            match = (
+                                re.search(r'Please retry in (\d+)', error_msg) or
+                                re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', error_msg)
+                            )
+                            wait_time = int(match.group(1)) + 5 if match else 60 * (attempt + 1)
+                            print(f"Rate limited. Retrying in {wait_time} seconds...")
+                            time.sleep(wait_time)
+                        elif attempt == max_retries - 1:
+                            print(f"Warning: Failed to generate summary for cluster {cluster_id} after {max_retries} attempts.")
                     elif attempt == max_retries - 1:
                         print(f"Warning: Failed to generate summary for cluster {cluster_id} after {max_retries} attempts.")
                     else:
