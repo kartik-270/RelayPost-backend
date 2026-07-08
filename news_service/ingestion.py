@@ -116,9 +116,13 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                                     image_url = upload_result.get("secure_url")
                                 except Exception as cloudinary_e:
                                     print(f"Cloudinary upload failed for {extracted_image_url}: {cloudinary_e}")
-                                    image_url = extracted_image_url # fallback
+                                    image_url = None
                         except Exception as e:
                             print(f"Failed to extract full content for {url}: {e}")
+                        
+                        if not image_url:
+                            print(f"Skipping article due to missing or failed image upload: {url}")
+                            continue
                         
                         # Use feed description if extraction fails or as description
                         # Decode HTML entities in description too

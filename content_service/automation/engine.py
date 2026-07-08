@@ -164,11 +164,9 @@ class ArticleAutomationEngine:
                 if local_hero_url:
                     final_article_data["hero_image"] = local_hero_url
                 else:
-                    # Fallback to direct unsplash URL if cloudinary upload fails
-                    final_article_data["hero_image"] = hero_url
-            
-            if not final_article_data.get("hero_image"):
-                final_article_data["hero_image"] = "/fallback_article.png"
+                    final_article_data["hero_image"] = None
+            else:
+                final_article_data["hero_image"] = None
 
             # 2. Fetch & Save Inline Images
             if "content_blocks" in final_article_data:
@@ -183,9 +181,7 @@ class ArticleAutomationEngine:
                             if local_img_url:
                                 block["content"] = local_img_url
                             else:
-                                block["content"] = img_url
-                        if not block.get("content"):
-                            block["content"] = "/fallback_article.png"
+                                block["content"] = ""
             
             # 5. Verify Structure and Images before Publishing
             is_valid = True
