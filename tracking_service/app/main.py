@@ -35,9 +35,8 @@ raw_origins = os.environ.get("CORS_ORIGINS", "")
 if raw_origins:
     cors_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 else:
-    cors_origins = ["https://relay-post.vercel.app"]
+    cors_origins = ["https://relaypost.me"]
 
-# Internal service — no public CORS needed, but allow origins for dev
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,

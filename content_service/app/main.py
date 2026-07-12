@@ -91,7 +91,7 @@ else:
     cors_origins = []
 
 if not cors_origins:
-    cors_origins = ["https://relay-post.vercel.app"]
+    cors_origins = ["https://relaypost.me"]
 
 MEDIA_BASE_URL = os.environ.get("MEDIA_BASE_URL", "http://localhost:8001")
 
