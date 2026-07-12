@@ -49,6 +49,7 @@ jobs:
           AUTH_CHANGED=false
           CONTENT_CHANGED=false
           NEWS_CHANGED=false
+          TRACKING_CHANGED=false
 
           if echo "$CHANGED_FILES" | grep -q "^auth_service/"; then
             AUTH_CHANGED=true
@@ -62,10 +63,15 @@ jobs:
             NEWS_CHANGED=true
           fi
 
+          if echo "$CHANGED_FILES" | grep -q "^tracking_service/"; then
+            TRACKING_CHANGED=true
+          fi
+
           if echo "$CHANGED_FILES" | grep -q "^docker-compose.yml"; then
             AUTH_CHANGED=true
             CONTENT_CHANGED=true
             NEWS_CHANGED=true
+            TRACKING_CHANGED=true
           fi
 
           echo "Cleaning up old Docker data to free up space..."
@@ -88,6 +94,12 @@ jobs:
             echo "Deploying news_service..."
             docker compose build news_service
             docker compose up -d news_service
+          fi
+
+          if [ "$TRACKING_CHANGED" = true ]; then
+            echo "Deploying tracking_service..."
+            docker compose build tracking_service
+            docker compose up -d tracking_service
           fi
 
           echo "Pruning old Docker images..."

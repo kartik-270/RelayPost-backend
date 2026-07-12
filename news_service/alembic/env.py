@@ -10,7 +10,7 @@ import sys
 # Add the parent directory to the sys.path so we can import our models
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '..')))
 
-from database import DATABASE_URL
+from app.core.database import DATABASE_URL
 from models import Base
 
 # this is the Alembic Config object, which provides
