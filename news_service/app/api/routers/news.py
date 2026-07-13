@@ -179,3 +179,21 @@ def get_rss_feed(db: Session = Depends(get_db)):
             
     rss_xml = fg.rss_str(pretty=True)
     return Response(content=rss_xml, media_type="application/xml")
+
+@router.post("/id/{article_id}/view")
+def increment_news_view(article_id: int, db: Session = Depends(get_db)):
+    """Increment the view count of a news article"""
+    article = crud.get_article_by_id(db, article_id=article_id)
+    if not article:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="News article not found")
+    article.views = (article.views or 0) + 1
+    db.commit()
+    db.refresh(article)
+    return {"status": "ok", "views": article.views}
+
+@router.get("/top", response_model=List[schemas.Article])
+def get_top_news():
+    """Get the cached top 5 news articles based on views"""
+    from app.services.cache import get_top_news_from_cache
+    return get_top_news_from_cache()

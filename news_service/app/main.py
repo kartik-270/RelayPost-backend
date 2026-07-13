@@ -58,6 +58,11 @@ app.add_middleware(
 def on_startup():
     print("Application starting... Initializing scheduler.")
     start_scheduler()
+    try:
+        from app.services.cache import update_top_news_cache
+        update_top_news_cache()
+    except Exception as e:
+        print(f"Startup Warning: Failed to populate cache on startup: {e}")
 
 @app.get("/health")
 def health_check():

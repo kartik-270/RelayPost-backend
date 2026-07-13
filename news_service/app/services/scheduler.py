@@ -5,11 +5,14 @@ from app.services.processing import update_article_clusters, generate_ai_summari
 
 scheduler = BackgroundScheduler()
 
+from app.services.cache import update_top_news_cache
+
 def scheduled_job():
     print("Running scheduled ingestion and processing...")
     process_and_store_articles()
     update_article_clusters()
     generate_ai_summaries()
+    update_top_news_cache()
 
 # Run every hour
 scheduler.add_job(

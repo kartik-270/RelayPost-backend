@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean
 from sqlalchemy.sql import func
+from sqlalchemy.dialects.postgresql import JSONB
 from app.core.database import Base
 import datetime
 
@@ -25,3 +26,11 @@ class Article(Base):
     meta_description = Column(Text, nullable=True)
     is_verified = Column(Boolean, default=False)
     full_analysis = Column(Text, nullable=True)
+    views = Column(Integer, default=0, nullable=False)
+
+class SystemCache(Base):
+    __tablename__ = "system_cache"
+    key = Column(String, primary_key=True, index=True)
+    value = Column(JSONB)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+

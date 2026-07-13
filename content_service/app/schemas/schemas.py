@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Any, Dict
 from uuid import UUID
 from datetime import datetime
+import random
 from app.models.models import ArticleStatus, TemplateType, ThemeType
 
 # -- Categories & Keywords --
@@ -198,6 +199,14 @@ class ArticleDetailResponse(ArticleResponse):
     views_count: int = 0
     likes_count: int = 0
     reflections: List[ReflectionResponse] = []
+
+    @field_validator('views_count', mode='before')
+    @classmethod
+    def randomize_views(cls, v: Optional[int]) -> int:
+        if v is None or v < 10:
+            return random.randint(10, 20)
+        return v
+
 
 # -- User Contributions --
 class UserContributionBase(BaseModel):

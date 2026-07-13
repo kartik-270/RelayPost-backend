@@ -20,6 +20,7 @@ class ArticleBase(BaseModel):
     meta_description: Optional[str] = None
     is_verified: Optional[bool] = False
     full_analysis: Optional[str] = None
+    views: Optional[int] = 0
 
 class RelatedSource(BaseModel):
     id: int
