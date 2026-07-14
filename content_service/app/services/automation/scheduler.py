@@ -52,7 +52,7 @@ async def cleanup_deleted_articles_task():
         return
         
     try:
-        from crud import permanently_delete_old_articles
+        from app.crud.crud import permanently_delete_old_articles
         permanently_delete_old_articles(db)
     finally:
         db.execute(text("SELECT pg_advisory_unlock(1003)"))

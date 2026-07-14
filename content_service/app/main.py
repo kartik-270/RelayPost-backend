@@ -525,7 +525,7 @@ async def trigger_topic_manually(payload: dict, background_tasks: BackgroundTask
                 "template_type": "standard"
             }
             
-            from crud import get_latest_prompt_version
+            from app.crud.crud import get_latest_prompt_version
             latest_prompt = get_latest_prompt_version(bg_db)
             from app.services.automation.prompts import CONTENT_GENERATION_DYNAMIC_PROMPT
             engine.current_content_prompt = latest_prompt.content_generation_dynamic if latest_prompt else CONTENT_GENERATION_DYNAMIC_PROMPT
