@@ -65,9 +65,15 @@ def get_popular_string_keywords(db: Session, limit: int = 10):
                 if k not in casing:
                     casing[k] = kw
     
-    popular = [{"tag": casing[k], "count": v} for k, v in counts.items() if v >= 5]
+    popular = [{"tag": casing[k], "count": v} for k, v in counts.items() if v >= 3]
     popular.sort(key=lambda x: x["count"], reverse=True)
-    return [p["tag"] for p in popular[:limit]]
+    
+    # Take a larger pool of top tags and shuffle them for variety on the frontend
+    top_pool = [p["tag"] for p in popular[:limit * 3]]
+    import random
+    random.shuffle(top_pool)
+    
+    return top_pool[:limit]
 
 def get_or_create_category(db: Session, name: str):
     if not name: return None
@@ -466,6 +472,20 @@ def create_contact_inquiry(db: Session, inquiry: schemas.ContactInquiryCreate):
     except IntegrityError:
         db.rollback()
         raise
+
+def get_all_inquiries(db: Session, status: str = None, skip: int = 0, limit: int = 100):
+    query = db.query(models.ContactInquiry)
+    if status:
+        query = query.filter(models.ContactInquiry.status == status)
+    return query.order_by(models.ContactInquiry.created_at.desc()).offset(skip).limit(limit).all()
+
+def update_inquiry_status(db: Session, inquiry_id: str, status: str):
+    db_inquiry = db.query(models.ContactInquiry).filter(models.ContactInquiry.id == inquiry_id).first()
+    if db_inquiry:
+        db_inquiry.status = status
+        db.commit()
+        db.refresh(db_inquiry)
+    return db_inquiry
 
 def get_unread_inquiries(db: Session, limit: int = 50):
     return db.query(models.ContactInquiry).filter(models.ContactInquiry.status == "unread").order_by(models.ContactInquiry.created_at.desc()).limit(limit).all()

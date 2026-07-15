@@ -777,13 +777,24 @@ def submit_contact_inquiry(inquiry: schemas.ContactInquiryCreate, db: Session = 
     except Exception as e:
         raise HTTPException(status_code=500, detail="Could not submit inquiry")
 
+@app.get("/admin/inquiries", response_model=List[schemas.ContactInquiryResponse])
+def list_admin_inquiries(status: Optional[str] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
+    return crud.get_all_inquiries(db, status=status, skip=skip, limit=limit)
+
+@app.patch("/admin/inquiries/{inquiry_id}/status", response_model=schemas.ContactInquiryResponse)
+def update_inquiry_status(inquiry_id: str, payload: schemas.ContactInquiryStatusUpdate, db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
+    updated_inquiry = crud.update_inquiry_status(db, inquiry_id, payload.status)
+    if not updated_inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    return updated_inquiry
+
 @app.get("/admin/inquiries/notifications")
 def get_inquiry_notifications(db: Session = Depends(get_db), current_user: TokenData = Depends(get_current_admin)):
     unread_count = crud.count_unread_inquiries(db)
     inquiries = crud.get_unread_inquiries(db, limit=5)
     return {
         "unread_count": unread_count,
-        "recent_inquiries": [schemas.ContactInquiryResponse.from_attributes(i) for i in inquiries]
+        "recent_inquiries": [schemas.ContactInquiryResponse.model_validate(i) for i in inquiries]
     }
 
 @app.get("/admin/notifications", response_model=List[schemas.AdminNotificationResponse])

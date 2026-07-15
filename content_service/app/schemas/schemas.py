@@ -264,6 +264,9 @@ class ContactInquiryResponse(ContactInquiryBase):
     class Config:
         from_attributes = True
 
+class ContactInquiryStatusUpdate(BaseModel):
+    status: str
+
 # -- Admin Notifications --
 class AdminNotificationBase(BaseModel):
     title: str
