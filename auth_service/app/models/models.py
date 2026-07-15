@@ -22,6 +22,14 @@ class User(Base):
     bio = Column(String, nullable=True) # Profile
     specialization = Column(String, nullable=True) # Expertise
     
+    # IP-based location data
+    country = Column(String, nullable=True)
+    state = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    timezone = Column(String, nullable=True)
+    latitude = Column(String, nullable=True)
+    longitude = Column(String, nullable=True)
+    
     role = Column(Enum(RoleEnum), default=RoleEnum.VIEWER, nullable=False)
     
     is_active = Column(Boolean, default=True)

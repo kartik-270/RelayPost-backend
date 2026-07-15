@@ -10,6 +10,12 @@ class UserBase(BaseModel):
     avatar: Optional[str] = None
     bio: Optional[str] = None
     specialization: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    timezone: Optional[str] = None
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
@@ -25,6 +31,12 @@ class UserUpdate(BaseModel):
     avatar: Optional[str] = None
     bio: Optional[str] = None
     specialization: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    timezone: Optional[str] = None
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
     role: Optional[RoleEnum] = None
     is_active: Optional[bool] = None
 

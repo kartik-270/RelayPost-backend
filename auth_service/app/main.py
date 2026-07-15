@@ -78,12 +78,64 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "your-google-client-id")
 
 class GoogleAuthRequest(BaseModel):
     token: str
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    timezone: Optional[str] = None
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
+
+def get_location_from_ip(ip: str):
+    default_loc = {
+        "country": "N/A",
+        "state": "N/A",
+        "city": "Unknown",
+        "timezone": "UTC",
+        "latitude": "0.0",
+        "longitude": "0.0"
+    }
+    if not ip or ip == "127.0.0.1" or ip == "::1":
+        return default_loc
+    try:
+        import requests
+        resp = requests.get(f"http://ip-api.com/json/{ip}", timeout=3)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("status") == "success":
+                return {
+                    "country": data.get("country") or "N/A",
+                    "state": data.get("regionName") or "N/A",
+                    "city": data.get("city") or "Unknown",
+                    "timezone": data.get("timezone") or "UTC",
+                    "latitude": str(data.get("lat")) if data.get("lat") else "0.0",
+                    "longitude": str(data.get("lon")) if data.get("lon") else "0.0"
+                }
+    except Exception:
+        pass
+    return default_loc
 
 @app.post("/auth/register", response_model=schemas.UserResponse, status_code=201)
-async def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+async def register(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
+        
+    if not user.country:
+        client_ip = request.headers.get("X-Forwarded-For")
+        if not client_ip:
+            client_ip = request.client.host
+        else:
+            client_ip = client_ip.split(",")[0].strip()
+            
+        loc = get_location_from_ip(client_ip)
+        if loc:
+            user.country = loc.get("country")
+            user.state = loc.get("state")
+            user.city = loc.get("city")
+            user.timezone = loc.get("timezone")
+            user.latitude = loc.get("latitude")
+            user.longitude = loc.get("longitude")
+
     hashed_password = get_password_hash(user.password) if user.password else None
     new_user = crud.create_user(db=db, user=user, hashed_password=hashed_password)
     
@@ -94,7 +146,7 @@ async def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 @app.post("/auth/token", response_model=schemas.Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+async def login_for_access_token(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = crud.get_user_by_email(db, email=form_data.username)
     if not user or not user.hashed_password:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
@@ -103,6 +155,25 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     
     if not user.is_verified:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="NOT_VERIFIED")
+
+    # Update location for existing users if missing
+    if not user.country:
+        client_ip = request.headers.get("X-Forwarded-For")
+        if not client_ip:
+            client_ip = request.client.host
+        else:
+            client_ip = client_ip.split(",")[0].strip()
+            
+        loc = get_location_from_ip(client_ip)
+        if loc:
+            user.country = loc.get("country")
+            user.state = loc.get("state")
+            user.city = loc.get("city")
+            user.timezone = loc.get("timezone")
+            user.latitude = loc.get("latitude")
+            user.longitude = loc.get("longitude")
+            db.commit()
+
     
     access_token_expires = timedelta(minutes=60*24)
     access_token = create_access_token(
@@ -195,7 +266,7 @@ def reset_password(request: schemas.ForgotPasswordReset, db: Session = Depends(g
     return {"msg": "Password has been successfully reset"}
 
 @app.post("/auth/google")
-def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):
+def google_auth(fastapi_req: Request, request: GoogleAuthRequest, db: Session = Depends(get_db)):
     try:
         idinfo = id_token.verify_oauth2_token(
             request.token, 
@@ -211,8 +282,28 @@ def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):
         is_new = False
         user = crud.get_user_by_email(db, email=email)
         if not user:
+            loc = {}
+            if not request.country:
+                client_ip = fastapi_req.headers.get("X-Forwarded-For")
+                if not client_ip:
+                    client_ip = fastapi_req.client.host
+                else:
+                    client_ip = client_ip.split(",")[0].strip()
+                loc = get_location_from_ip(client_ip)
+            
             # Register new user from google
-            user_create = schemas.UserCreate(email=email, display_name=name, avatar=picture, google_id=google_id)
+            user_create = schemas.UserCreate(
+                email=email, 
+                display_name=name, 
+                avatar=picture, 
+                google_id=google_id,
+                country=request.country or loc.get("country"),
+                state=request.state or loc.get("state"),
+                city=request.city or loc.get("city"),
+                timezone=request.timezone or loc.get("timezone"),
+                latitude=request.latitude or loc.get("latitude"),
+                longitude=request.longitude or loc.get("longitude")
+            )
             user = crud.create_user(db=db, user=user_create, google_id=google_id)
             is_new = True
             
