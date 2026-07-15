@@ -306,6 +306,23 @@ def google_auth(fastapi_req: Request, request: GoogleAuthRequest, db: Session = 
             )
             user = crud.create_user(db=db, user=user_create, google_id=google_id)
             is_new = True
+        else:
+            # If location is missing for existing user, try to get it
+            if not user.country:
+                client_ip = fastapi_req.headers.get("X-Forwarded-For")
+                if not client_ip:
+                    client_ip = fastapi_req.client.host
+                else:
+                    client_ip = client_ip.split(",")[0].strip()
+                loc = get_location_from_ip(client_ip)
+                if loc:
+                    user.country = loc.get("country")
+                    user.state = loc.get("state")
+                    user.city = loc.get("city")
+                    user.timezone = loc.get("timezone")
+                    user.latitude = loc.get("latitude")
+                    user.longitude = loc.get("longitude")
+                    db.commit()
             
         access_token = create_access_token(
             data={"sub": str(user.id), "email": user.email, "role": user.role.value, "display_name": user.display_name}, expires_delta=timedelta(minutes=60*24)
