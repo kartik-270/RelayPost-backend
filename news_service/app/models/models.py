@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean, Index
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
 from app.core.database import Base
+from pgvector.sqlalchemy import HALFVEC
 import datetime
 
 class Article(Base):
@@ -27,6 +28,11 @@ class Article(Base):
     is_verified = Column(Boolean, default=False)
     full_analysis = Column(Text, nullable=True)
     views = Column(Integer, default=0, nullable=False)
+    embedding = Column(HALFVEC(384), nullable=True)
+
+    __table_args__ = (
+        Index('article_embedding_idx', 'embedding', postgresql_using='hnsw', postgresql_with={'m': 16, 'ef_construction': 64}, postgresql_ops={'embedding': 'halfvec_cosine_ops'}),
+    )
 
 class SystemCache(Base):
     __tablename__ = "system_cache"

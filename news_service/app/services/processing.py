@@ -1,10 +1,9 @@
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+# Removed sklearn imports as we use PostgreSQL for similarity search
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import SessionLocal
 from app.models import models
-import numpy as np
+# Removed numpy as we use PostgreSQL for vector operations
 import os
 from datetime import datetime, timedelta
 import google.generativeai as genai
@@ -18,54 +17,40 @@ def update_article_clusters():
     try:
         # Only cluster articles ingested in the last 12 hours to prevent stale mixing
         cutoff = datetime.utcnow() - timedelta(hours=12)
-        articles = db.query(models.Article).filter(
+        unclustered_articles = db.query(models.Article).filter(
             models.Article.cluster_id == None,
             models.Article.created_at >= cutoff
         ).all()
-        if len(articles) < 2:
+        if not unclustered_articles:
             return
         
-        texts = [f"{a.title} {a.description or ''}" for a in articles]
-        
-        vectorizer = TfidfVectorizer(stop_words='english')
-        tfidf_matrix = vectorizer.fit_transform(texts)
-        
-        similarity_matrix = cosine_similarity(tfidf_matrix)
-        
-        # Simple clustering: if similarity > 0.5, they belong to the same cluster
-        visited = set()
-        clusters = []
-        
-        for i in range(len(articles)):
-            if i in visited:
-                continue
-                
-            cluster = [i]
-            visited.add(i)
-            
-            for j in range(i + 1, len(articles)):
-                if j not in visited and similarity_matrix[i][j] > 0.65:
-                    cluster.append(j)
-                    visited.add(j)
-            
-            clusters.append(cluster)
-            
         # Ensure the sequence exists (PostgreSQL specific)
         db.execute(text("CREATE SEQUENCE IF NOT EXISTS article_cluster_id_seq START WITH 1;"))
         db.commit()
         
-        for cluster_indices in clusters:
-            # Fetch next cluster ID atomically
-            result = db.execute(text("SELECT nextval('article_cluster_id_seq')"))
-            current_cluster_id = result.scalar()
-            
-            for idx in cluster_indices:
-                articles[idx].cluster_id = current_cluster_id
+        for article in unclustered_articles:
+            if article.embedding is None:
+                continue
                 
-                # Try simple keyword extraction from the title (very basic mockup)
-                title_words = set(articles[idx].title.lower().split())
-                # Just mock keywords for now
-                articles[idx].keywords = list(title_words)[:5] 
+            # PostgreSQL vector search using <=> operator for cosine distance.
+            # We want similarity, which is 1 - distance.
+            # So similarity > 0.82 is equivalent to distance < 0.18.
+            nearest = db.query(
+                models.Article,
+                models.Article.embedding.cosine_distance(article.embedding).label("distance")
+            ).filter(
+                models.Article.id != article.id,
+                models.Article.cluster_id.isnot(None),
+                models.Article.created_at >= cutoff
+            ).order_by(
+                models.Article.embedding.cosine_distance(article.embedding)
+            ).first()
+            
+            if nearest and nearest.distance is not None and nearest.distance < 0.18:
+                article.cluster_id = nearest.Article.cluster_id
+            else:
+                result = db.execute(text("SELECT nextval('article_cluster_id_seq')"))
+                article.cluster_id = result.scalar()
             
         db.commit()
     except Exception as e:
@@ -103,19 +88,33 @@ def generate_ai_summaries():
             
         model_name = os.getenv("GEMINI_MODEL_NAME", "gemma-4-31b-it")
         fallback_model_name = "gemma-4-26b-a4b-it"
+        
+        primary_key = os.getenv("GEMINI_API_KEY")
+        secondary_key = os.getenv("GEMINI_API_KEY_SECONDARY")
+        api_keys = [k for k in [primary_key, secondary_key] if k]
+        current_key_idx = 0
+        
         model = genai.GenerativeModel(model_name)
         rate_limit_hits = 0
         import time
         import re
 
         for cluster_id, articles in cluster_map.items():
-            time.sleep(2) # Prevent rate limits
+            # Rotate API keys round-robin if multiple keys are provided
+            if api_keys:
+                genai.configure(api_key=api_keys[current_key_idx])
+                model = genai.GenerativeModel(model_name)
+                current_key_idx = (current_key_idx + 1) % len(api_keys)
 
-            # Also fetch any other articles in the cluster to provide full context
-            all_cluster_articles = db.query(models.Article).filter(models.Article.cluster_id == cluster_id).all()
+            # Gemma API Limits: 30 RPM, 16k TPM. 
+            # With 2 keys, we can safely reduce sleep to 5s (12 requests/min, ~24k TPM shared across 2 keys)
+            time.sleep(5) 
+
+            # Fetch up to 3 articles per cluster to keep context small and token count low
+            all_cluster_articles = db.query(models.Article).filter(models.Article.cluster_id == cluster_id).limit(3).all()
             
             context_text = "\n\n".join([
-                f"Headline: {a.title}\nDetails: {a.description or ''}" 
+                f"Headline: {a.title}\nDetails: {a.description or ''}\nContent: {(a.content or '')[:800]}" 
                 for a in all_cluster_articles
             ])
 
@@ -124,10 +123,10 @@ def generate_ai_summaries():
                 "news reports. First, determine if the information across these sources appears to be genuine, "
                 "factual, and coherent. Synthesize a highly detailed, deeply analyzed, and comprehensive narrative as 'full_analysis'. "
                 "The 'full_analysis' MUST be at least 5-7 long paragraphs. To achieve this length, you must expand upon the context by providing relevant background information, explaining the broader implications of the event, discussing historical context, and predicting future trends based on your expert knowledge.\n"
-                "CRITICAL RELEVANCE RULE: While you must use your expert knowledge to expand on the topic, your entire analysis MUST remain explicitly and strictly anchored to the specific news event provided in the 'Context' below. Do NOT pivot to unrelated news stories or hallucinate events that did not happen. Every paragraph must directly tie back to explaining or analyzing the core news event.\n"
+                "CRITICAL RELEVANCE RULE: The 'Context' below contains extracted factual sentences (not the full raw text). While you must use your expert knowledge to expand on the topic, your entire analysis MUST remain explicitly and strictly anchored to these specific facts. Do NOT pivot to unrelated news stories, hallucinate events that did not happen, or simply paraphrase the input. Every paragraph must directly tie back to explaining or analyzing the core news event.\n"
                 "HALLUCINATION SAFETY VALVE: If the provided news event is highly niche, hyper-local, or you possess absolutely zero prior world knowledge about it, DO NOT invent facts or history just to reach the 5-7 paragraph length. In this specific case, write a shorter, concise analysis strictly based on the provided context to guarantee 100% factual accuracy.\n"
                 "IMPORTANT FORMATTING: The 'full_analysis' MUST be formatted as standard Markdown (using ##, ###, **, *, -, >) so it renders perfectly in our frontend. Do NOT use HTML tags. Include an engaging introduction, deeply analytical body paragraphs with subheadings, and a conclusive summary.\n"
-                "Also generate a short 'ai_summary' (plain text), a URL-friendly 'slug', an SEO title (max 60 chars), an SEO meta description (max 160 chars), and a specific 'category'.\n\n"
+                "Also generate a crisp 'ai_summary' (plain text, strictly 2-3 short sentences max, under 3-4 lines total), a URL-friendly 'slug', an SEO title (max 60 chars), an SEO meta description (max 160 chars), and a specific 'category'.\n\n"
                 "CRITICAL CATEGORY RULE: You MUST choose the category from this EXACT list: ['World News', 'India News', 'Politics', 'Business', 'Technology', 'Science', 'Health', 'Sports', 'Entertainment']. Do not invent or use any other category names.\n\n"
                 "Return a JSON object with these EXACT keys:\n"
                 "'is_genuine' (boolean), 'category' (string), 'ai_summary', 'full_analysis' (Markdown string), 'slug', 'meta_title', 'meta_description'.\n\n"
@@ -144,7 +143,19 @@ def generate_ai_summaries():
                     response = model.generate_content(prompt, generation_config=generation_config)
                     
                     import json
+                    import re
+                    
                     text = response.text
+                    
+                    # Clean up common Gemma JSON formatting artifacts
+                    text = text.strip()
+                    if text.startswith("```json"):
+                        text = text[7:]
+                    elif text.startswith("```"):
+                        text = text[3:]
+                    if text.endswith("```"):
+                        text = text[:-3]
+                    text = text.strip()
                     
                     # Use raw_decode loop to extract all valid JSON objects/arrays
                     decoder = json.JSONDecoder()
@@ -224,6 +235,7 @@ def generate_ai_summaries():
                         primary_article.meta_title = data.get('meta_title')
                         primary_article.meta_description = data.get('meta_description')
                         primary_article.is_verified = bool(data.get('is_genuine', False))
+                        primary_article.published_at = datetime.utcnow() # Set publish time to when the AI summary is generated on our site
                         if data.get('category'):
                             primary_article.category = data.get('category')
                             
@@ -264,7 +276,7 @@ def generate_ai_summaries():
                     elif attempt == max_retries - 1:
                         print(f"Warning: Failed to generate summary for cluster {cluster_id} after {max_retries} attempts.")
                     else:
-                        time.sleep(5) # Small delay for other errors before retry
+                        time.sleep(10) # Wait 10 seconds on general internal errors before retry
 
         db.commit()
     except Exception as e:

@@ -6,6 +6,27 @@ from sqlalchemy.orm import Session
 from app.models import models
 from app.core.database import SessionLocal
 from newspaper import Article as NewspaperArticle, Config as NewspaperConfig
+from sentence_transformers import SentenceTransformer
+import nltk
+
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+
+# Load embedding model lazily to prevent API startup crashes
+embedding_model = None
+
+def get_embedding_model():
+    global embedding_model
+    if embedding_model is None:
+        print("Initializing embedding model...")
+        import os
+        # Use a high-speed mirror to bypass the huggingface.co 504 Gateway Timeout/blocks
+        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+        # HF_TOKEN is loaded automatically from .env
+        embedding_model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+    return embedding_model
 
 RSS_FEEDS = {
     "general": [
@@ -61,6 +82,8 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
     """
     db = SessionLocal()
     seen_urls = set()
+    new_articles = []
+    texts_for_embedding = []
     
     start_index = (page - 1) * page_size
     end_index = start_index + page_size
@@ -93,15 +116,39 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                             
                         seen_urls.add(url)
                         
+                        # Fallback image extraction from RSS feed
+                        feed_image_url = None
+                        if "media_content" in entry and entry.media_content:
+                            feed_image_url = entry.media_content[0].get("url")
+                        elif hasattr(entry, "links"):
+                            for link in entry.links:
+                                if link.get("type") and "image" in link.get("type"):
+                                    feed_image_url = link.get("href")
+                                    break
+                                    
                         # Use newspaper3k to extract full content and image
                         content = ""
                         image_url = None
+                        extracted_keywords = []
                         try:
                             article_extractor = NewspaperArticle(url, config=config)
                             article_extractor.download()
-                            article_extractor.parse()
-                            content = article_extractor.text
-                            extracted_image_url = article_extractor.top_image
+                            
+                            # Check if download succeeded (download_state 2 is success)
+                            if article_extractor.download_state == 2:
+                                article_extractor.parse()
+                                
+                                try:
+                                    article_extractor.nlp()
+                                    extracted_keywords = article_extractor.keywords
+                                except Exception as nlp_e:
+                                    print(f"NLP extraction failed for {url}: {nlp_e}")
+                                    
+                                content = article_extractor.text
+                                extracted_image_url = article_extractor.top_image or feed_image_url
+                            else:
+                                print(f"Failed to download article for {url}")
+                                extracted_image_url = feed_image_url
                             
                             if extracted_image_url:
                                 try:
@@ -124,11 +171,24 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                             print(f"Skipping article due to missing or failed image upload: {url}")
                             continue
                         
-                        # Use feed description if extraction fails or as description
                         # Decode HTML entities in description too
-                        description = html.unescape(entry.get("description", "") or "")
+                        description = ""
+                        if 'article_extractor' in locals() and hasattr(article_extractor, 'summary') and article_extractor.summary:
+                            description = article_extractor.summary
+                        else:
+                            description_raw = html.unescape(entry.get("description", "") or "")
+                            # Strip basic HTML tags (like <a href="...">) to prevent raw HTML bleeding into content
+                            import re
+                            description = re.sub(r'<[^>]+>', '', description_raw).strip()
+                            
+                            # Fix intentional RSS truncation like [...] or ...
+                            if description.endswith("[...]") or description.endswith("...") or description.endswith("…"):
+                                if content and len(content) > 100:
+                                    # Replace with a clean slice of the full extracted content
+                                    description = content[:200].rsplit(' ', 1)[0] + "..."
+                        
                         if not description and content:
-                            description = content[:200] + "..."
+                            description = content[:200].rsplit(' ', 1)[0] + "..."
                         elif not content:
                             content = description
                             
@@ -161,14 +221,25 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                             image_url=image_url,
                             published_at=published_at,
                             category=category,
-                            keywords=[],
+                            keywords=extracted_keywords,
                             is_verified=False,
                             slug=slug
                         )
+                        new_articles.append(new_article)
+                        texts_for_embedding.append(f"{title} {description}")
                         
-                        db.add(new_article)
                 except Exception as e:
                     print(f"Error parsing feed {feed_url}: {e}")
+                    
+        if new_articles:
+            print(f"Batch embedding {len(new_articles)} new articles...")
+            model = get_embedding_model()
+            embeddings = model.encode(texts_for_embedding, batch_size=64, normalize_embeddings=True)
+            for i, article in enumerate(new_articles):
+                # pgvector halfvec expects a list or numpy array of floats
+                article.embedding = embeddings[i].tolist()
+                db.add(article)
+                
         db.commit()
     except Exception as e:
         db.rollback()

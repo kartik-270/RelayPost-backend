@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: relaypost_postgres
     restart: unless-stopped
 
@@ -50,6 +50,9 @@ services:
     container_name: content_service
     restart: unless-stopped
 
+    # volumes:
+    #   - ./content_service:/app
+
     env_file:
       - ./content_service/.env
 
@@ -71,6 +74,9 @@ services:
 
     container_name: news_service
     restart: unless-stopped
+
+    # volumes:
+    #   - ./news_service:/app
 
     env_file:
       - ./news_service/.env
