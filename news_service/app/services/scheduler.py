@@ -7,12 +7,23 @@ scheduler = BackgroundScheduler()
 
 from app.services.cache import update_top_news_cache
 
-def scheduled_job():
-    print("Running scheduled ingestion and processing...")
+import multiprocessing
+
+def _run_job_process():
+    # Dispose of inherited DB connections to avoid SSL/socket corruption in the fork
+    from app.core.database import engine
+    engine.dispose()
+    
+    print("Running scheduled ingestion and processing in background process...")
     process_and_store_articles()
     update_article_clusters()
     generate_ai_summaries()
     update_top_news_cache()
+
+def scheduled_job():
+    # Run the heavy ML/ingestion tasks in a completely separate process to free up the API
+    p = multiprocessing.Process(target=_run_job_process)
+    p.start()
 
 # Run every hour
 scheduler.add_job(
