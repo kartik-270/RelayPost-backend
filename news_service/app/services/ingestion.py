@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from app.models import models
 from app.core.database import SessionLocal
 from newspaper import Article as NewspaperArticle, Config as NewspaperConfig
-from sentence_transformers import SentenceTransformer
 import nltk
 
 try:
@@ -17,16 +16,78 @@ except LookupError:
 # Load embedding model lazily to prevent API startup crashes
 embedding_model = None
 
+class GeminiEmbeddingModel:
+    """
+    Embeds text using the Gemini API with round-robin rotation across
+    multiple API keys (GEMINI_API_KEY, GEMINI_API_KEY_SECONDARY,
+    GEMINI_API_KEY_TERTIARY). Each key has a ~30K TPM limit; rotating
+    across 3 keys effectively gives ~90K TPM combined throughput.
+    On a 429 rate-limit hit, the next key is tried immediately.
+    """
+
+    def __init__(self):
+        import os
+        keys = [
+            os.environ.get("GEMINI_API_KEY"),
+            os.environ.get("GEMINI_API_KEY_SECONDARY"),
+            os.environ.get("GEMINI_API_KEY_TERTIARY"),
+        ]
+        # Filter out missing/placeholder keys
+        self._keys = [k for k in keys if k and k != "your_gemini_api_key_here"]
+        self._current_idx = 0
+        if not self._keys:
+            print("Warning: No Gemini API keys configured for embeddings.")
+        else:
+            print(f"GeminiEmbeddingModel initialized with {len(self._keys)} API key(s).")
+
+    def _next_key(self):
+        """Advance to the next key in round-robin order."""
+        self._current_idx = (self._current_idx + 1) % len(self._keys)
+
+    def embed_one(self, text: str):
+        """
+        Embed a single text string, rotating through API keys.
+        Returns a list of 384 floats, or None if all keys fail.
+        """
+        import google.generativeai as genai
+
+        if not self._keys:
+            return None
+
+        # Try each key at most once before giving up
+        for attempt in range(len(self._keys)):
+            api_key = self._keys[self._current_idx]
+            try:
+                genai.configure(api_key=api_key)
+                result = genai.embed_content(
+                    model="models/gemini-embedding-2",
+                    content=text,
+                    output_dimensionality=384
+                )
+                # Advance key index for the NEXT call (round-robin)
+                self._next_key()
+                return result['embedding']
+
+            except Exception as e:
+                err = str(e)
+                if "429" in err or "RESOURCE_EXHAUSTED" in err or "quota" in err.lower():
+                    print(f"Embedding key [{self._current_idx}] rate limited — switching to next key.")
+                    self._next_key()
+                    # No sleep — just try the next key immediately
+                else:
+                    print(f"Embedding failed on key [{self._current_idx}]: {err[:120]}")
+                    self._next_key()
+
+        print(f"All {len(self._keys)} embedding key(s) failed for this text.")
+        return None
+
 def get_embedding_model():
     global embedding_model
     if embedding_model is None:
-        print("Initializing embedding model...")
-        import os
-        # Use a high-speed mirror to bypass the huggingface.co 504 Gateway Timeout/blocks
-        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-        # HF_TOKEN is loaded automatically from .env
-        embedding_model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+        print("Initializing Gemini embedding model...")
+        embedding_model = GeminiEmbeddingModel()
     return embedding_model
+
 
 RSS_FEEDS = {
     "general": [
@@ -77,14 +138,14 @@ RSS_FEEDS = {
 def process_and_store_articles(page: int = 1, page_size: int = 10):
     """
     Ingest articles from all RSS feeds.
-    :param page: Which "page" of results to fetch (1-indexed). Each page fetches `page_size` entries per feed.
-    :param page_size: Number of entries per feed per page (default 10).
+    Each article is embedded and committed individually so a single
+    failure never rolls back the entire batch.
     """
     db = SessionLocal()
     seen_urls = set()
-    new_articles = []
-    texts_for_embedding = []
-    
+    saved_count = 0
+    failed_count = 0
+
     start_index = (page - 1) * page_size
     end_index = start_index + page_size
 
@@ -92,7 +153,13 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
     config = NewspaperConfig()
     config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     config.request_timeout = 15
-    
+
+    embedding_model = get_embedding_model()
+
+    import re
+    import uuid
+    import time
+
     try:
         for category, feeds in RSS_FEEDS.items():
             for feed_url in feeds:
@@ -100,22 +167,22 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                 try:
                     parsed_feed = feedparser.parse(feed_url)
                     source_title = parsed_feed.feed.get("title", "Unknown Source")
-                    
+
                     for entry in parsed_feed.entries[start_index:end_index]:
                         url = entry.get("link")
                         if not url or not entry.get("title"):
                             continue
-                        
+
                         if url in seen_urls:
                             continue
-                            
+
                         existing = db.query(models.Article).filter(models.Article.url == url).first()
                         if existing:
                             seen_urls.add(url)
                             continue
-                            
+
                         seen_urls.add(url)
-                        
+
                         # Fallback image extraction from RSS feed
                         feed_image_url = None
                         if "media_content" in entry and entry.media_content:
@@ -125,35 +192,34 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                                 if link.get("type") and "image" in link.get("type"):
                                     feed_image_url = link.get("href")
                                     break
-                                    
+
                         # Use newspaper3k to extract full content and image
                         content = ""
                         image_url = None
                         extracted_keywords = []
+                        article_extractor = None
                         try:
                             article_extractor = NewspaperArticle(url, config=config)
                             article_extractor.download()
-                            
-                            # Check if download succeeded (download_state 2 is success)
+
                             if article_extractor.download_state == 2:
                                 article_extractor.parse()
-                                
+
                                 try:
                                     article_extractor.nlp()
                                     extracted_keywords = article_extractor.keywords
                                 except Exception as nlp_e:
                                     print(f"NLP extraction failed for {url}: {nlp_e}")
-                                    
+
                                 content = article_extractor.text
                                 extracted_image_url = article_extractor.top_image or feed_image_url
                             else:
                                 print(f"Failed to download article for {url}")
                                 extracted_image_url = feed_image_url
-                            
+
                             if extracted_image_url:
                                 try:
                                     import cloudinary.uploader
-                                    import uuid
                                     upload_result = cloudinary.uploader.upload(
                                         extracted_image_url,
                                         public_id=f"news_{uuid.uuid4().hex[:12]}",
@@ -163,35 +229,29 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                                     image_url = upload_result.get("secure_url")
                                 except Exception as cloudinary_e:
                                     print(f"Cloudinary upload failed for {extracted_image_url}: {cloudinary_e}")
-                                    image_url = None
+                                    image_url = extracted_image_url
                         except Exception as e:
                             print(f"Failed to extract full content for {url}: {e}")
-                        
+
                         if not image_url:
-                            print(f"Skipping article due to missing or failed image upload: {url}")
-                            continue
-                        
-                        # Decode HTML entities in description too
+                            print(f"Warning: Article saved without an image: {url}")
+
+                        # Build description
                         description = ""
-                        if 'article_extractor' in locals() and hasattr(article_extractor, 'summary') and article_extractor.summary:
+                        if article_extractor and hasattr(article_extractor, 'summary') and article_extractor.summary:
                             description = article_extractor.summary
                         else:
                             description_raw = html.unescape(entry.get("description", "") or "")
-                            # Strip basic HTML tags (like <a href="...">) to prevent raw HTML bleeding into content
-                            import re
                             description = re.sub(r'<[^>]+>', '', description_raw).strip()
-                            
-                            # Fix intentional RSS truncation like [...] or ...
                             if description.endswith("[...]") or description.endswith("...") or description.endswith("…"):
                                 if content and len(content) > 100:
-                                    # Replace with a clean slice of the full extracted content
                                     description = content[:200].rsplit(' ', 1)[0] + "..."
-                        
+
                         if not description and content:
                             description = content[:200].rsplit(' ', 1)[0] + "..."
                         elif not content:
                             content = description
-                            
+
                         # Parse date
                         published_at = datetime.utcnow()
                         if entry.get("published_parsed"):
@@ -199,18 +259,25 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                                 published_at = datetime(*entry.published_parsed[:6])
                             except:
                                 pass
-                                
-                        # Decode HTML entities in title (e.g. &#8217; -> ')
+
                         title = html.unescape(entry.get("title", ""))
-                        
-                        import re
-                        import uuid
-                        # Generate a URL-friendly slug
+
                         base_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', title).strip().lower()
                         base_slug = re.sub(r'[-\s]+', '-', base_slug)
                         unique_id = str(uuid.uuid4())[:8]
                         slug = f"{base_slug[:100]}-{unique_id}" if base_slug else unique_id
-                                
+
+                        # --- Embed this article individually and save immediately ---
+                        # This ensures a failure on one article never rolls back others.
+                        embedding = None
+                        try:
+                            text_for_embedding = f"{title} {description}"
+                            embedding = embedding_model.embed_one(text_for_embedding)
+                            time.sleep(0.5)  # Light rate-limit guard between embed calls
+                        except Exception as embed_e:
+                            print(f"Embedding failed for {url}: {embed_e}")
+                            # embedding stays None — article still saved, just won't cluster
+
                         new_article = models.Article(
                             title=title,
                             description=description,
@@ -223,29 +290,27 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                             category=category,
                             keywords=extracted_keywords,
                             is_verified=False,
-                            slug=slug
+                            slug=slug,
+                            embedding=embedding
                         )
-                        new_articles.append(new_article)
-                        texts_for_embedding.append(f"{title} {description}")
-                        
+
+                        try:
+                            db.add(new_article)
+                            db.commit()
+                            saved_count += 1
+                            print(f"Saved article #{saved_count}: {title[:60]}")
+                        except Exception as db_e:
+                            db.rollback()
+                            failed_count += 1
+                            print(f"Failed to save article ({url}): {db_e}")
+
                 except Exception as e:
                     print(f"Error parsing feed {feed_url}: {e}")
-                    
-        if new_articles:
-            print(f"Batch embedding {len(new_articles)} new articles...")
-            model = get_embedding_model()
-            embeddings = model.encode(texts_for_embedding, batch_size=64, normalize_embeddings=True)
-            for i, article in enumerate(new_articles):
-                # pgvector halfvec expects a list or numpy array of floats
-                article.embedding = embeddings[i].tolist()
-                db.add(article)
-                
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"Database error during ingestion: {e}")
+
+        print(f"Ingestion complete: {saved_count} saved, {failed_count} failed.")
     finally:
         db.close()
 
 if __name__ == "__main__":
     process_and_store_articles()
+

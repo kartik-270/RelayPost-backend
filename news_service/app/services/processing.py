@@ -12,7 +12,58 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here":
     genai.configure(api_key=GEMINI_API_KEY)
 
+def backfill_missing_embeddings():
+    """
+    Before clustering, find any recent articles that were saved without an
+    embedding (e.g. because all API keys were briefly rate-limited during
+    ingestion) and attempt to embed them now using the same multi-key model.
+    This ensures no article is permanently stuck without an embedding.
+    """
+    from app.services.ingestion import get_embedding_model
+    import time
+
+    db = SessionLocal()
+    try:
+        cutoff = datetime.utcnow() - timedelta(hours=12)
+        articles_without_embeddings = db.query(models.Article).filter(
+            models.Article.embedding == None,
+            models.Article.cluster_id == None,
+            models.Article.created_at >= cutoff
+        ).all()
+
+        if not articles_without_embeddings:
+            return
+
+        print(f"Backfilling embeddings for {len(articles_without_embeddings)} article(s)...")
+        model = get_embedding_model()
+        backfilled = 0
+
+        for article in articles_without_embeddings:
+            text_for_embedding = f"{article.title or ''} {article.description or ''}".strip()
+            if not text_for_embedding:
+                continue
+            try:
+                embedding = model.embed_one(text_for_embedding)
+                if embedding is not None:
+                    article.embedding = embedding
+                    db.commit()
+                    backfilled += 1
+                    time.sleep(0.5)  # light rate-limit guard
+            except Exception as e:
+                db.rollback()
+                print(f"Backfill embedding failed for article {article.id}: {e}")
+
+        print(f"Backfill complete: {backfilled}/{len(articles_without_embeddings)} article(s) re-embedded.")
+    except Exception as e:
+        print(f"Error during embedding backfill: {e}")
+    finally:
+        db.close()
+
+
 def update_article_clusters():
+    # First, retry embedding for any articles that were saved without one
+    backfill_missing_embeddings()
+
     db = SessionLocal()
     try:
         # Only cluster articles ingested in the last 12 hours to prevent stale mixing
@@ -29,26 +80,28 @@ def update_article_clusters():
         db.commit()
         
         for article in unclustered_articles:
-            if article.embedding is None:
-                continue
+            if article.embedding is not None:
+                # Use vector similarity to find an existing cluster to join
+                nearest = db.query(
+                    models.Article,
+                    models.Article.embedding.cosine_distance(article.embedding).label("distance")
+                ).filter(
+                    models.Article.id != article.id,
+                    models.Article.cluster_id.isnot(None),
+                    models.Article.created_at >= cutoff
+                ).order_by(
+                    models.Article.embedding.cosine_distance(article.embedding)
+                ).first()
                 
-            # PostgreSQL vector search using <=> operator for cosine distance.
-            # We want similarity, which is 1 - distance.
-            # So similarity > 0.82 is equivalent to distance < 0.18.
-            nearest = db.query(
-                models.Article,
-                models.Article.embedding.cosine_distance(article.embedding).label("distance")
-            ).filter(
-                models.Article.id != article.id,
-                models.Article.cluster_id.isnot(None),
-                models.Article.created_at >= cutoff
-            ).order_by(
-                models.Article.embedding.cosine_distance(article.embedding)
-            ).first()
-            
-            if nearest and nearest.distance is not None and nearest.distance < 0.18:
-                article.cluster_id = nearest.Article.cluster_id
+                if nearest and nearest.distance is not None and nearest.distance < 0.18:
+                    article.cluster_id = nearest.Article.cluster_id
+                else:
+                    result = db.execute(text("SELECT nextval('article_cluster_id_seq')"))
+                    article.cluster_id = result.scalar()
             else:
+                # No embedding — still assign a solo cluster so this article is
+                # not permanently invisible. It will be AI-processed on its own.
+                print(f"Article {article.id} has no embedding, assigning solo cluster.")
                 result = db.execute(text("SELECT nextval('article_cluster_id_seq')"))
                 article.cluster_id = result.scalar()
             
@@ -234,12 +287,14 @@ def generate_ai_summaries():
                         primary_article.slug = f"{base_slug}-{uuid.uuid4().hex[:8]}"
                         primary_article.meta_title = data.get('meta_title')
                         primary_article.meta_description = data.get('meta_description')
-                        primary_article.is_verified = bool(data.get('is_genuine', False))
+                        is_genuine = bool(data.get('is_genuine', False))
+                        primary_article.is_verified = is_genuine
                         primary_article.published_at = datetime.utcnow() # Set publish time to when the AI summary is generated on our site
                         if data.get('category'):
                             primary_article.category = data.get('category')
                             
-                        # Keep secondary articles as related but not verified so they don't duplicate on frontend
+                        # Secondary articles are kept as related sources (not verified)
+                        # so they don't duplicate the primary on the frontend.
                         for other_article in articles[1:]:
                             other_article.is_verified = False
                             
