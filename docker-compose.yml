@@ -93,6 +93,34 @@ services:
     networks:
       - relaypost_network
 
+  news_generation_service:
+    build:
+      context: ./news_generation_service
+
+    container_name: news_generation_service
+    restart: unless-stopped
+
+    env_file:
+      - ./news_generation_service/.env
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload"
+
+    ports:
+      - "8004:8004"
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+    networks:
+      - relaypost_network
+
   tracking_service:
     build:
       context: ./tracking_service

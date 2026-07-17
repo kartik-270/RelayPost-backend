@@ -19,7 +19,7 @@ from app.services.cache import update_top_news_cache
 if __name__ == "__main__":
     try:
         print("Starting isolated ingestion and processing pipeline...", flush=True)
-        process_and_store_articles()
+        process_and_store_articles(page=1, page_size=3)
         update_article_clusters()
         generate_ai_summaries()
         update_top_news_cache()

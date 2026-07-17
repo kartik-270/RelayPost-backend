@@ -27,11 +27,11 @@ except Exception as e:
     print(f"Startup Warning: Database table creation failed: {e}")
 
 from app.api.routers import news
-from app.api.routers import premium as news_premium
+from app.services.scheduler import start_scheduler
 
 app = FastAPI(
-    title="News Service API",
-    description="Microservice for ingesting, processing, and serving news data.",
+    title="News Generation Service API",
+    description="Microservice for ingesting and processing news data in the background.",
     version="1.0.0"
 )
 
@@ -55,11 +55,18 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    print("Application starting... (Background tasks moved to generation service)")
+    print("Application starting... Initializing scheduler.")
+    start_scheduler()
+    import asyncio
+    try:
+        from app.services.cache import update_top_news_cache
+        # Run cache update in the background so it doesn't block FastAPI startup
+        asyncio.create_task(asyncio.to_thread(update_top_news_cache))
+    except Exception as e:
+        print(f"Startup Warning: Failed to populate cache on startup: {e}")
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "service": "news_service"}
+    return {"status": "ok", "service": "news_generation_service"}
 
 app.include_router(news.router, prefix="/api/news", tags=["News"])
-app.include_router(news_premium.router)

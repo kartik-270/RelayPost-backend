@@ -244,7 +244,11 @@ def generate_ai_summaries():
             
             for attempt in range(max_retries):
                 try:
-                    response = model.generate_content(prompt, generation_config=generation_config)
+                    response = model.generate_content(
+                        prompt, 
+                        generation_config=generation_config,
+                        request_options={"timeout": 60}
+                    )
                     
                     import json
                     import re

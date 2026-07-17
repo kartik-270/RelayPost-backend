@@ -6,27 +6,36 @@ from datetime import datetime
 from app.crud import crud
 from app.schemas import schemas
 from app.core.database import get_db
-from app.services.scheduler import pause_news_job, resume_news_job, trigger_news_job
+import requests
 
 router = APIRouter()
 
 @router.post("/admin/engine/pause")
 def pause_engine():
     """Pause the automated news ingestion job"""
-    pause_news_job()
-    return {"status": "paused", "message": "News engine paused successfully"}
+    try:
+        response = requests.post("http://news_generation_service:8004/api/news/admin/engine/pause")
+        return response.json()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @router.post("/admin/engine/resume")
 def resume_engine():
     """Resume the automated news ingestion job"""
-    resume_news_job()
-    return {"status": "resumed", "message": "News engine resumed successfully"}
+    try:
+        response = requests.post("http://news_generation_service:8004/api/news/admin/engine/resume")
+        return response.json()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @router.post("/admin/engine/trigger")
 def trigger_engine():
     """Manually trigger the news ingestion job once"""
-    trigger_news_job()
-    return {"status": "triggered", "message": "News engine triggered successfully"}
+    try:
+        response = requests.post("http://news_generation_service:8004/api/news/admin/engine/trigger")
+        return response.json()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @router.get("/live")
 def get_live_feed(
