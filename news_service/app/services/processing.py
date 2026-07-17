@@ -62,62 +62,36 @@ def backfill_missing_embeddings():
 
 def cleanup_duplicate_articles():
     """
-    Remove any duplicate articles by URL to prevent unique constraint violations
-    during updates on production. Keeps the newest article for each duplicate URL.
+    Remove duplicate articles by URL/slug in a single atomic statement,
+    avoiding the select-then-delete race with concurrent ingestion.
     """
     db = SessionLocal()
     try:
-        # Find duplicate URLs
-        duplicates = db.execute(text("""
-            SELECT url, COUNT(*) 
-            FROM articles 
-            WHERE url IS NOT NULL AND url != ''
-            GROUP BY url 
-            HAVING COUNT(*) > 1
-        """)).fetchall()
+        url_result = db.execute(text("""
+            DELETE FROM articles a
+            USING articles b
+            WHERE a.url = b.url
+              AND a.url IS NOT NULL AND a.url != ''
+              AND (a.created_at, a.id) < (b.created_at, b.id)
+        """))
+        db.commit()
+        if url_result.rowcount:
+            print(f"Database Cleanup: Removed {url_result.rowcount} duplicate URL row(s).")
 
-        if duplicates:
-            print(f"Database Cleanup: Found {len(duplicates)} duplicate URL(s). Cleaning up...")
-            for dup in duplicates:
-                url = dup[0]
-                ids = db.execute(text("""
-                    SELECT id FROM articles 
-                    WHERE url = :url 
-                    ORDER BY created_at DESC
-                """), {"url": url}).fetchall()
-                
-                # Keep the first ID (newest), delete the rest
-                ids_to_delete = [row[0] for row in ids[1:]]
-                if ids_to_delete:
-                    db.query(models.Article).filter(models.Article.id.in_(ids_to_delete)).delete(synchronize_session=False)
-            db.commit()
-            print("Database Cleanup: Duplicate URLs removed successfully.")
+        slug_result = db.execute(text("""
+            DELETE FROM articles a
+            USING articles b
+            WHERE a.slug = b.slug
+              AND a.slug IS NOT NULL AND a.slug != ''
+              AND (a.created_at, a.id) < (b.created_at, b.id)
+        """))
+        db.commit()
+        if slug_result.rowcount:
+            print(f"Database Cleanup: Removed {slug_result.rowcount} duplicate slug row(s).")
 
-        # Find duplicate Slugs
-        duplicate_slugs = db.execute(text("""
-            SELECT slug, COUNT(*) 
-            FROM articles 
-            WHERE slug IS NOT NULL AND slug != ''
-            GROUP BY slug 
-            HAVING COUNT(*) > 1
-        """)).fetchall()
-
-        if duplicate_slugs:
-            print(f"Database Cleanup: Found {len(duplicate_slugs)} duplicate Slug(s). Cleaning up...")
-            for dup in duplicate_slugs:
-                slug = dup[0]
-                ids = db.execute(text("""
-                    SELECT id FROM articles 
-                    WHERE slug = :slug 
-                    ORDER BY created_at DESC
-                """), {"slug": slug}).fetchall()
-                
-                # Keep the first ID (newest), delete the rest
-                ids_to_delete = [row[0] for row in ids[1:]]
-                if ids_to_delete:
-                    db.query(models.Article).filter(models.Article.id.in_(ids_to_delete)).delete(synchronize_session=False)
-            db.commit()
-            print("Database Cleanup: Duplicate slugs removed successfully.")
+        # Critical: clear the ORM identity map so subsequent queries in this
+        # session don't hold stale references to rows just deleted via raw SQL
+        db.expire_all()
     except Exception as e:
         db.rollback()
         print(f"Database Cleanup Error: {e}")
@@ -146,33 +120,43 @@ def update_article_clusters():
         db.execute(text("CREATE SEQUENCE IF NOT EXISTS article_cluster_id_seq START WITH 1;"))
         db.commit()
         
+        clustered_count = 0
+        failed_count = 0
         for article in unclustered_articles:
-            if article.embedding is not None:
-                # Use vector similarity to find an existing cluster to join
-                nearest = db.query(
-                    models.Article,
-                    models.Article.embedding.cosine_distance(article.embedding).label("distance")
-                ).filter(
-                    models.Article.id != article.id,
-                    models.Article.cluster_id.isnot(None),
-                    models.Article.created_at >= cutoff
-                ).order_by(
-                    models.Article.embedding.cosine_distance(article.embedding)
-                ).first()
-                
-                if nearest and nearest.distance is not None and nearest.distance < 0.18:
-                    article.cluster_id = nearest.Article.cluster_id
+            try:
+                if article.embedding is not None:
+                    # Use vector similarity to find an existing cluster to join
+                    nearest = db.query(
+                        models.Article,
+                        models.Article.embedding.cosine_distance(article.embedding).label("distance")
+                    ).filter(
+                        models.Article.id != article.id,
+                        models.Article.cluster_id.isnot(None),
+                        models.Article.created_at >= cutoff
+                    ).order_by(
+                        models.Article.embedding.cosine_distance(article.embedding)
+                    ).first()
+                    
+                    if nearest and nearest.distance is not None and nearest.distance < 0.18:
+                        article.cluster_id = nearest.Article.cluster_id
+                    else:
+                        result = db.execute(text("SELECT nextval('article_cluster_id_seq')"))
+                        article.cluster_id = result.scalar()
                 else:
+                    # No embedding — still assign a solo cluster so this article is
+                    # not permanently invisible. It will be AI-processed on its own.
+                    print(f"Article {article.id} has no embedding, assigning solo cluster.")
                     result = db.execute(text("SELECT nextval('article_cluster_id_seq')"))
                     article.cluster_id = result.scalar()
-            else:
-                # No embedding — still assign a solo cluster so this article is
-                # not permanently invisible. It will be AI-processed on its own.
-                print(f"Article {article.id} has no embedding, assigning solo cluster.")
-                result = db.execute(text("SELECT nextval('article_cluster_id_seq')"))
-                article.cluster_id = result.scalar()
-            
-        db.commit()
+                
+                db.commit()
+                clustered_count += 1
+            except Exception as e:
+                db.rollback()
+                failed_count += 1
+                print(f"Failed to cluster article {article.id}: {e}")
+
+        print(f"Clustering complete: {clustered_count} clustered, {failed_count} failed.")
     except Exception as e:
         db.rollback()
         print(f"Error during clustering: {e}")
@@ -372,6 +356,8 @@ def generate_ai_summaries():
                         print(f"Attempt {attempt + 1}: Data missing required keys. Raw response: {text[:200]}...")
                         if attempt == max_retries - 1:
                             print(f"Failed to generate valid summary for cluster {cluster_id}")
+                            articles[0].ai_summary = "[GENERATION_FAILED]"
+                            db.commit()
                     
                 except Exception as e:
                     error_msg = str(e)
@@ -379,6 +365,8 @@ def generate_ai_summaries():
                     
                     if "response.parts quick accessor requires a single candidate" in error_msg or "blocked" in error_msg.lower():
                         print(f"Skipping cluster {cluster_id} due to Gemini safety block.")
+                        articles[0].ai_summary = "[GENERATION_SKIPPED_SAFETY]"
+                        db.commit()
                         break
 
                     if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
@@ -400,8 +388,12 @@ def generate_ai_summaries():
                             time.sleep(wait_time)
                         elif attempt == max_retries - 1:
                             print(f"Warning: Failed to generate summary for cluster {cluster_id} after {max_retries} attempts.")
+                            articles[0].ai_summary = "[GENERATION_FAILED]"
+                            db.commit()
                     elif attempt == max_retries - 1:
                         print(f"Warning: Failed to generate summary for cluster {cluster_id} after {max_retries} attempts.")
+                        articles[0].ai_summary = "[GENERATION_FAILED]"
+                        db.commit()
                     else:
                         time.sleep(10) # Wait 10 seconds on general internal errors before retry
 

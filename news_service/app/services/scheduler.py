@@ -46,5 +46,5 @@ def resume_news_job():
 
 def trigger_news_job():
     # Execute the job immediately in the background
-    scheduler.add_job(scheduled_job, id='manual_news_trigger', name='Manual News Trigger')
+    scheduler.add_job(scheduled_job, name='Manual News Trigger')
     print("News ingestion job triggered manually.")

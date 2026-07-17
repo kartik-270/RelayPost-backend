@@ -299,7 +299,9 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                     print(f"Embedding failed for {url}: {embed_e}")
                     # embedding stays None — article still saved, just won't cluster
 
-                new_article = models.Article(
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+                
+                stmt = pg_insert(models.Article).values(
                     title=title,
                     description=description,
                     content=content,
@@ -313,13 +315,16 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                     is_verified=False,
                     slug=slug,
                     embedding=embedding
-                )
+                ).on_conflict_do_nothing(index_elements=['url'])
 
                 try:
-                    db.add(new_article)
+                    result = db.execute(stmt)
                     db.commit()
-                    saved_count += 1
-                    print(f"Saved article #{saved_count}: {title[:60]}")
+                    if result.rowcount:
+                        saved_count += 1
+                        print(f"Saved article #{saved_count}: {title[:60]}")
+                    else:
+                        print(f"Skipped duplicate (race condition prevented): {url}")
                 except Exception as db_e:
                     db.rollback()
                     failed_count += 1
