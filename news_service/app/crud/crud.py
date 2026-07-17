@@ -116,10 +116,12 @@ def get_article_by_slug(db: Session, slug: str, is_verified: Optional[bool] = No
             alt_query = alt_query.filter(models.Article.is_verified == is_verified)
         article = alt_query.first()
         
-    # Extra fallback: Use ILIKE in case of case-sensitivity issues or hidden spaces
+    # Extra fallback: Use ILIKE in case of case-sensitivity issues, hidden spaces, or weird unicode hyphens
     if not article:
-        # Match using ILIKE and % wildcards to ignore hidden characters
-        search_slug = f"%{slug.strip()}%"
+        # Create a wildcard search pattern by replacing hyphens and spaces with %
+        # This bypasses any En-dashes, Em-dashes, or non-breaking spaces Gemini might have generated
+        wildcard_pattern = slug.replace("-", "%").replace(" ", "%")
+        search_slug = f"%{wildcard_pattern}%"
         alt_query_2 = db.query(models.Article).filter(models.Article.slug.ilike(search_slug))
         if is_verified is not None:
             alt_query_2 = alt_query_2.filter(models.Article.is_verified == is_verified)
