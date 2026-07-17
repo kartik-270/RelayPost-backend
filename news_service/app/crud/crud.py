@@ -107,6 +107,24 @@ def get_article_by_slug(db: Session, slug: str, is_verified: Optional[bool] = No
         query = query.filter(models.Article.is_verified == is_verified)
     article = query.first()
     
+    # Fallback: Try with hyphens replaced by spaces and vice versa
+    if not article:
+        alt_slug1 = slug.replace("-", " ")
+        alt_slug2 = slug.replace(" ", "-")
+        alt_query = db.query(models.Article).filter(or_(models.Article.slug == alt_slug1, models.Article.slug == alt_slug2))
+        if is_verified is not None:
+            alt_query = alt_query.filter(models.Article.is_verified == is_verified)
+        article = alt_query.first()
+        
+    # Extra fallback: Use ILIKE in case of case-sensitivity issues or hidden spaces
+    if not article:
+        # Match using ILIKE and % wildcards to ignore hidden characters
+        search_slug = f"%{slug.strip()}%"
+        alt_query_2 = db.query(models.Article).filter(models.Article.slug.ilike(search_slug))
+        if is_verified is not None:
+            alt_query_2 = alt_query_2.filter(models.Article.is_verified == is_verified)
+        article = alt_query_2.first()
+    
     if not article and slug.isdigit():
         query2 = db.query(models.Article).filter(models.Article.id == int(slug))
         if is_verified is not None:
