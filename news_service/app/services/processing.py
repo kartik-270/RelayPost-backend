@@ -60,8 +60,83 @@ def backfill_missing_embeddings():
         db.close()
 
 
+def cleanup_duplicate_articles():
+    """
+    Remove any duplicate articles by URL to prevent unique constraint violations
+    during updates on production. Keeps the newest article for each duplicate URL.
+    """
+    db = SessionLocal()
+    try:
+        # Find duplicate URLs
+        duplicates = db.execute(text("""
+            SELECT url, COUNT(*) 
+            FROM articles 
+            WHERE url IS NOT NULL AND url != ''
+            GROUP BY url 
+            HAVING COUNT(*) > 1
+        """)).fetchall()
+
+        if duplicates:
+            print(f"Database Cleanup: Found {len(duplicates)} duplicate URL(s). Cleaning up...")
+            for dup in duplicates:
+                url = dup[0]
+                # Find all IDs for this URL, ordered by created_at desc (keep the latest)
+                ids = db.execute(text("""
+                    SELECT id FROM articles 
+                    WHERE url = :url 
+                    ORDER BY created_at DESC
+                """), {"url": url}).fetchall()
+                
+                # Keep the first ID (newest), delete the rest
+                ids_to_delete = [row[0] for row in ids[1:]]
+                if ids_to_delete:
+                    db.execute(text("""
+                        DELETE FROM articles 
+                        WHERE id = ANY(:ids)
+                    """), {"ids": ids_to_delete})
+            db.commit()
+            print("Database Cleanup: Duplicate URLs removed successfully.")
+
+        # Find duplicate Slugs
+        duplicate_slugs = db.execute(text("""
+            SELECT slug, COUNT(*) 
+            FROM articles 
+            WHERE slug IS NOT NULL AND slug != ''
+            GROUP BY slug 
+            HAVING COUNT(*) > 1
+        """)).fetchall()
+
+        if duplicate_slugs:
+            print(f"Database Cleanup: Found {len(duplicate_slugs)} duplicate Slug(s). Cleaning up...")
+            for dup in duplicate_slugs:
+                slug = dup[0]
+                # Find all IDs for this slug, ordered by created_at desc (keep the latest)
+                ids = db.execute(text("""
+                    SELECT id FROM articles 
+                    WHERE slug = :slug 
+                    ORDER BY created_at DESC
+                """), {"slug": slug}).fetchall()
+                
+                # Keep the first ID (newest), delete the rest
+                ids_to_delete = [row[0] for row in ids[1:]]
+                if ids_to_delete:
+                    db.execute(text("""
+                        DELETE FROM articles 
+                        WHERE id = ANY(:ids)
+                    """), {"ids": ids_to_delete})
+            db.commit()
+            print("Database Cleanup: Duplicate slugs removed successfully.")
+    except Exception as e:
+        db.rollback()
+        print(f"Database Cleanup Error: {e}")
+    finally:
+        db.close()
+
 def update_article_clusters():
-    # First, retry embedding for any articles that were saved without one
+    # First, clean up any duplicate URLs to prevent UniqueViolations during updates
+    cleanup_duplicate_articles()
+
+    # Next, retry embedding for any articles that were saved without one
     backfill_missing_embeddings()
 
     db = SessionLocal()
