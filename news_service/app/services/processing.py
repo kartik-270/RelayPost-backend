@@ -89,11 +89,7 @@ def cleanup_duplicate_articles():
                 # Keep the first ID (newest), delete the rest
                 ids_to_delete = [row[0] for row in ids[1:]]
                 if ids_to_delete:
-                    # Use raw SQL with a tuple to guarantee deletion, bypassing ORM session conflicts
-                    db.execute(text("""
-                        DELETE FROM articles 
-                        WHERE id IN :ids
-                    """), {"ids": tuple(ids_to_delete)})
+                    db.query(models.Article).filter(models.Article.id.in_(ids_to_delete)).delete(synchronize_session=False)
             db.commit()
             print("Database Cleanup: Duplicate URLs removed successfully.")
 
@@ -119,11 +115,7 @@ def cleanup_duplicate_articles():
                 # Keep the first ID (newest), delete the rest
                 ids_to_delete = [row[0] for row in ids[1:]]
                 if ids_to_delete:
-                    # Use raw SQL with a tuple to guarantee deletion, bypassing ORM session conflicts
-                    db.execute(text("""
-                        DELETE FROM articles 
-                        WHERE id IN :ids
-                    """), {"ids": tuple(ids_to_delete)})
+                    db.query(models.Article).filter(models.Article.id.in_(ids_to_delete)).delete(synchronize_session=False)
             db.commit()
             print("Database Cleanup: Duplicate slugs removed successfully.")
     except Exception as e:
@@ -384,6 +376,11 @@ def generate_ai_summaries():
                 except Exception as e:
                     error_msg = str(e)
                     print(f"Gemini Generation Attempt {attempt + 1} Failed for cluster {cluster_id}: {error_msg[:200]}")
+                    
+                    if "response.parts quick accessor requires a single candidate" in error_msg or "blocked" in error_msg.lower():
+                        print(f"Skipping cluster {cluster_id} due to Gemini safety block.")
+                        break
+
                     if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
                         rate_limit_hits += 1
                         if rate_limit_hits > 3 and model_name != fallback_model_name:
