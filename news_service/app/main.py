@@ -58,9 +58,11 @@ app.add_middleware(
 def on_startup():
     print("Application starting... Initializing scheduler.")
     start_scheduler()
+    import asyncio
     try:
         from app.services.cache import update_top_news_cache
-        update_top_news_cache()
+        # Run cache update in the background so it doesn't block FastAPI startup
+        asyncio.create_task(asyncio.to_thread(update_top_news_cache))
     except Exception as e:
         print(f"Startup Warning: Failed to populate cache on startup: {e}")
 

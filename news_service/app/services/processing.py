@@ -89,7 +89,11 @@ def cleanup_duplicate_articles():
                 # Keep the first ID (newest), delete the rest
                 ids_to_delete = [row[0] for row in ids[1:]]
                 if ids_to_delete:
-                    db.query(models.Article).filter(models.Article.id.in_(ids_to_delete)).delete(synchronize_session=False)
+                    # Use raw SQL with a tuple to guarantee deletion, bypassing ORM session conflicts
+                    db.execute(text("""
+                        DELETE FROM articles 
+                        WHERE id IN :ids
+                    """), {"ids": tuple(ids_to_delete)})
             db.commit()
             print("Database Cleanup: Duplicate URLs removed successfully.")
 
@@ -115,7 +119,11 @@ def cleanup_duplicate_articles():
                 # Keep the first ID (newest), delete the rest
                 ids_to_delete = [row[0] for row in ids[1:]]
                 if ids_to_delete:
-                    db.query(models.Article).filter(models.Article.id.in_(ids_to_delete)).delete(synchronize_session=False)
+                    # Use raw SQL with a tuple to guarantee deletion, bypassing ORM session conflicts
+                    db.execute(text("""
+                        DELETE FROM articles 
+                        WHERE id IN :ids
+                    """), {"ids": tuple(ids_to_delete)})
             db.commit()
             print("Database Cleanup: Duplicate slugs removed successfully.")
     except Exception as e:
