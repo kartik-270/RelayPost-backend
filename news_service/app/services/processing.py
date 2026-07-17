@@ -80,7 +80,6 @@ def cleanup_duplicate_articles():
             print(f"Database Cleanup: Found {len(duplicates)} duplicate URL(s). Cleaning up...")
             for dup in duplicates:
                 url = dup[0]
-                # Find all IDs for this URL, ordered by created_at desc (keep the latest)
                 ids = db.execute(text("""
                     SELECT id FROM articles 
                     WHERE url = :url 
@@ -90,10 +89,7 @@ def cleanup_duplicate_articles():
                 # Keep the first ID (newest), delete the rest
                 ids_to_delete = [row[0] for row in ids[1:]]
                 if ids_to_delete:
-                    db.execute(text("""
-                        DELETE FROM articles 
-                        WHERE id = ANY(:ids)
-                    """), {"ids": ids_to_delete})
+                    db.query(models.Article).filter(models.Article.id.in_(ids_to_delete)).delete(synchronize_session=False)
             db.commit()
             print("Database Cleanup: Duplicate URLs removed successfully.")
 
@@ -110,7 +106,6 @@ def cleanup_duplicate_articles():
             print(f"Database Cleanup: Found {len(duplicate_slugs)} duplicate Slug(s). Cleaning up...")
             for dup in duplicate_slugs:
                 slug = dup[0]
-                # Find all IDs for this slug, ordered by created_at desc (keep the latest)
                 ids = db.execute(text("""
                     SELECT id FROM articles 
                     WHERE slug = :slug 
@@ -120,10 +115,7 @@ def cleanup_duplicate_articles():
                 # Keep the first ID (newest), delete the rest
                 ids_to_delete = [row[0] for row in ids[1:]]
                 if ids_to_delete:
-                    db.execute(text("""
-                        DELETE FROM articles 
-                        WHERE id = ANY(:ids)
-                    """), {"ids": ids_to_delete})
+                    db.query(models.Article).filter(models.Article.id.in_(ids_to_delete)).delete(synchronize_session=False)
             db.commit()
             print("Database Cleanup: Duplicate slugs removed successfully.")
     except Exception as e:
