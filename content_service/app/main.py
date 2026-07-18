@@ -119,6 +119,10 @@ async def shutdown_event():
 
 def _register_digest_job():
     """Add the weekly digest job to the existing AutomationScheduler."""
+    if os.environ.get("DISABLE_DIGEST_JOB", "").lower() == "true":
+        print("[DIGEST] Weekly digest job is DISABLED via DISABLE_DIGEST_JOB env var.")
+        return
+
     from apscheduler.triggers.cron import CronTrigger
     from app.services.digest_scheduler import run_digest_job_sync
     try:
@@ -548,6 +552,44 @@ async def pause_automation(current_user: TokenData = Depends(get_current_admin))
 async def resume_automation(current_user: TokenData = Depends(get_current_admin)):
     automation_scheduler.resume_automation()
     return {"message": "Article generation scheduling has been resumed."}
+
+# --- DIGEST SCHEDULER CONTROL ---
+
+@app.get("/admin/digest/status")
+async def get_digest_status(current_user: TokenData = Depends(get_current_admin)):
+    """Returns whether the weekly digest job is currently scheduled and when it next runs."""
+    job = automation_scheduler.scheduler.get_job("weekly_digest_job")
+    if job:
+        next_run = job.next_run_time.isoformat() if job.next_run_time else None
+        return {"active": True, "next_run": next_run}
+    return {"active": False, "next_run": None}
+
+@app.post("/admin/digest/pause")
+async def pause_digest_job(current_user: TokenData = Depends(get_current_admin)):
+    """Removes the weekly digest cron job from the scheduler until resumed."""
+    job = automation_scheduler.scheduler.get_job("weekly_digest_job")
+    if job:
+        automation_scheduler.scheduler.remove_job("weekly_digest_job")
+        return {"message": "Weekly digest scheduler has been paused. No digest will run until resumed."}
+    return {"message": "Digest scheduler was already inactive."}
+
+@app.post("/admin/digest/resume")
+async def resume_digest_job(current_user: TokenData = Depends(get_current_admin)):
+    """Re-registers the weekly digest cron job (Sunday 06:00 UTC)."""
+    from apscheduler.triggers.cron import CronTrigger
+    from app.services.digest_scheduler import run_digest_job_sync
+    existing = automation_scheduler.scheduler.get_job("weekly_digest_job")
+    if existing:
+        return {"message": "Digest scheduler is already active."}
+    automation_scheduler.scheduler.add_job(
+        run_digest_job_sync,
+        CronTrigger(day_of_week="sun", hour=6, minute=0, timezone="UTC"),
+        id="weekly_digest_job",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+    return {"message": "Weekly digest scheduler has been resumed. Next run: Sunday 06:00 UTC."}
 
 from app.services.automation.learning import SelfLearningEngine
 
