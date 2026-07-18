@@ -55,7 +55,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup():
-    print("Application starting... Initializing scheduler.")
+    print("Application starting... Initializing scheduler.", flush=True)
     start_scheduler()
     import asyncio
     try:

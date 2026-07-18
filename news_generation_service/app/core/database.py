@@ -14,6 +14,11 @@ if DATABASE_URL.startswith("postgres://"):
 is_local = "localhost" in DATABASE_URL or "127.0.0.1" in DATABASE_URL or "news_db" in DATABASE_URL
 connect_args = {"sslmode": "require"} if not is_local else {}
 
+# idle_in_transaction_session_timeout: if a transaction is open but idle (e.g. frozen
+# waiting for Gemini API), PostgreSQL auto-rolls it back after 30s, releasing all locks.
+# statement_timeout: no single SQL statement can run for more than 60s.
+connect_args["options"] = "-c idle_in_transaction_session_timeout=30000 -c statement_timeout=60000"
+
 engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True, pool_recycle=300)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
