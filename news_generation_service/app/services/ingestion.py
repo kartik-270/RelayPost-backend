@@ -141,10 +141,10 @@ RSS_FEEDS = {
 def process_and_store_articles(page: int = 1, page_size: int = 10):
     """
     Ingest articles from all RSS feeds.
-    Each article is embedded and committed individually so a single
-    failure never rolls back the entire batch.
+    Each article uses its own short-lived DB session (open→write→close immediately),
+    so NO database connection is ever held open during external network calls
+    (newspaper download, Cloudinary upload, Gemini embedding).
     """
-    db = SessionLocal()
     seen_urls = set()
     saved_count = 0
     failed_count = 0
@@ -202,7 +202,13 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                 if url in seen_urls:
                     continue
 
-                existing = db.query(models.Article).filter(models.Article.url == url).first()
+                # Brief session to check if the URL already exists in DB
+                db_check = SessionLocal()
+                try:
+                    existing = db_check.query(models.Article).filter(models.Article.url == url).first()
+                finally:
+                    db_check.close()
+
                 if existing:
                     seen_urls.add(url)
                     continue
@@ -288,8 +294,7 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                 unique_id = str(uuid.uuid4())[:8]
                 slug = f"{base_slug[:100]}-{unique_id}" if base_slug else unique_id
 
-                # --- Embed this article individually and save immediately ---
-                # This ensures a failure on one article never rolls back others.
+                # --- Embed this article individually ---
                 embedding = None
                 try:
                     text_for_embedding = f"{title} {description}"
@@ -297,45 +302,48 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                     time.sleep(0.5)  # Light rate-limit guard between embed calls
                 except Exception as embed_e:
                     print(f"Embedding failed for {url}: {embed_e}")
-                    # embedding stays None — article still saved, just won't cluster
 
-                from sqlalchemy.dialects.postgresql import insert as pg_insert
-                
-                stmt = pg_insert(models.Article).values(
-                    title=title,
-                    description=description,
-                    content=content,
-                    source_name=source_title,
-                    author=entry.get("author"),
-                    url=url,
-                    image_url=image_url,
-                    published_at=published_at,
-                    category=category,
-                    keywords=extracted_keywords,
-                    is_verified=False,
-                    slug=slug,
-                    embedding=embedding
-                ).on_conflict_do_nothing(index_elements=['url'])
-
+                # Brief session to save the article to DB immediately
+                db_write = SessionLocal()
                 try:
-                    result = db.execute(stmt)
-                    db.commit()
+                    from sqlalchemy.dialects.postgresql import insert as pg_insert
+                    stmt = pg_insert(models.Article).values(
+                        title=title,
+                        description=description,
+                        content=content,
+                        source_name=source_title,
+                        author=entry.get("author"),
+                        url=url,
+                        image_url=image_url,
+                        published_at=published_at,
+                        category=category,
+                        keywords=extracted_keywords,
+                        is_verified=False,
+                        slug=slug,
+                        embedding=embedding
+                    ).on_conflict_do_nothing(index_elements=['url'])
+                    
+                    result = db_write.execute(stmt)
+                    db_write.commit()
                     if result.rowcount:
                         saved_count += 1
                         print(f"Saved article #{saved_count}: {title[:60]}")
                     else:
                         print(f"Skipped duplicate (race condition prevented): {url}")
                 except Exception as db_e:
-                    db.rollback()
+                    db_write.rollback()
                     failed_count += 1
                     print(f"Failed to save article ({url}): {db_e}")
+                finally:
+                    db_write.close()
 
             except Exception as e:
                 print(f"Error processing article from feed {feed_url}: {e}")
 
         print(f"Ingestion complete: {saved_count} saved, {failed_count} failed.")
-    finally:
-        db.close()
+    except Exception as outer_e:
+        print(f"Unhandled error in ingestion pipeline: {outer_e}")
+
 
 if __name__ == "__main__":
     process_and_store_articles()

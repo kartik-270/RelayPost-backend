@@ -14,7 +14,7 @@ router = APIRouter()
 def pause_engine():
     """Pause the automated news ingestion job"""
     try:
-        response = requests.post("http://news_generation_service:8004/api/news/admin/engine/pause")
+        response = requests.post("http://news_generation_service:8004/api/news/admin/engine/pause", timeout=10)
         return response.json()
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -23,7 +23,7 @@ def pause_engine():
 def resume_engine():
     """Resume the automated news ingestion job"""
     try:
-        response = requests.post("http://news_generation_service:8004/api/news/admin/engine/resume")
+        response = requests.post("http://news_generation_service:8004/api/news/admin/engine/resume", timeout=10)
         return response.json()
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -32,7 +32,7 @@ def resume_engine():
 def trigger_engine():
     """Manually trigger the news ingestion job once"""
     try:
-        response = requests.post("http://news_generation_service:8004/api/news/admin/engine/trigger")
+        response = requests.post("http://news_generation_service:8004/api/news/admin/engine/trigger", timeout=10)
         return response.json()
     except Exception as e:
         return {"status": "error", "message": str(e)}

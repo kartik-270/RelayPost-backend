@@ -49,6 +49,7 @@ jobs:
           AUTH_CHANGED=false
           CONTENT_CHANGED=false
           NEWS_CHANGED=false
+          NEWS_GENERATION_CHANGED=false
           TRACKING_CHANGED=false
 
           if echo "$CHANGED_FILES" | grep -q "^auth_service/"; then
@@ -63,6 +64,10 @@ jobs:
             NEWS_CHANGED=true
           fi
 
+          if echo "$CHANGED_FILES" | grep -q "^news_generation_service/"; then
+            NEWS_GENERATION_CHANGED=true
+          fi
+
           if echo "$CHANGED_FILES" | grep -q "^tracking_service/"; then
             TRACKING_CHANGED=true
           fi
@@ -71,6 +76,7 @@ jobs:
             AUTH_CHANGED=true
             CONTENT_CHANGED=true
             NEWS_CHANGED=true
+            NEWS_GENERATION_CHANGED=true
             TRACKING_CHANGED=true
           fi
 
@@ -94,6 +100,12 @@ jobs:
             echo "Deploying news_service..."
             docker compose build news_service
             docker compose up -d news_service
+          fi
+
+          if [ "$NEWS_GENERATION_CHANGED" = true ]; then
+            echo "Deploying news_generation_service..."
+            docker compose build news_generation_service
+            docker compose up -d news_generation_service
           fi
 
           if [ "$TRACKING_CHANGED" = true ]; then
