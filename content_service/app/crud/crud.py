@@ -140,7 +140,23 @@ def get_article(db: Session, article_id: uuid.UUID):
     return db.query(models.Article).filter(models.Article.id == article_id).first()
 
 def get_article_by_slug(db: Session, slug: str):
-    return db.query(models.Article).filter(models.Article.slug == slug).first()
+    article = db.query(models.Article).filter(models.Article.slug == slug).first()
+    
+    # Fallback: Try with hyphens replaced by spaces and vice versa
+    if not article:
+        alt_slug1 = slug.replace("-", " ")
+        alt_slug2 = slug.replace(" ", "-")
+        article = db.query(models.Article).filter(or_(models.Article.slug == alt_slug1, models.Article.slug == alt_slug2)).first()
+        
+    # Extra fallback: Use ILIKE in case of case-sensitivity issues, hidden spaces, or weird unicode hyphens
+    if not article:
+        # Create a wildcard search pattern by replacing hyphens and spaces with %
+        # This bypasses any En-dashes, Em-dashes, or non-breaking spaces Gemini might have generated
+        wildcard_pattern = slug.replace("-", "%").replace(" ", "%")
+        search_slug = f"%{wildcard_pattern}%"
+        article = db.query(models.Article).filter(models.Article.slug.ilike(search_slug)).first()
+        
+    return article
 
 def add_view(db: Session, article_id: uuid.UUID):
     article = db.query(models.Article).filter(models.Article.id == article_id).first()
