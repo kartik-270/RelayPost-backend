@@ -27,8 +27,9 @@ def scheduled_job():
     proc = subprocess.Popen([sys.executable, "-m", "app.services.run_all"])
 
     def watchdog(p, timeout):
-        p.wait(timeout=timeout)
-        if p.returncode is None:
+        try:
+            p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
             print(
                 f"Pipeline watchdog: process {p.pid} exceeded {timeout}s limit. Force killing...",
                 flush=True

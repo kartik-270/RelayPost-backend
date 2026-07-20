@@ -169,7 +169,7 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
         feed_data_list = []
         for category, feeds in RSS_FEEDS.items():
             for feed_url in feeds:
-                print(f"Fetching feed (page={page}): {feed_url}")
+                print(f"Fetching feed (page={page}): {feed_url}", flush=True)
                 try:
                     parsed_feed = feedparser.parse(feed_url)
                     source_title = parsed_feed.feed.get("title", "Unknown Source")
@@ -190,7 +190,7 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                 if i < len(entries):
                     interleaved_queue.append((category, feed_url, source_title, entries[i]))
 
-        print(f"Successfully fetched {len(interleaved_queue)} articles across all feeds. Processing in round-robin order...")
+        print(f"Successfully fetched {len(interleaved_queue)} articles across all feeds. Processing in round-robin order...", flush=True)
 
         # 3. Process the interleaved queue
         for category, feed_url, source_title, entry in interleaved_queue:
@@ -340,7 +340,7 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
             except Exception as e:
                 print(f"Error processing article from feed {feed_url}: {e}")
 
-        print(f"Ingestion complete: {saved_count} saved, {failed_count} failed.")
+        print(f"Ingestion complete: {saved_count} saved, {failed_count} failed.", flush=True)
     except Exception as outer_e:
         print(f"Unhandled error in ingestion pipeline: {outer_e}")
 
