@@ -4,15 +4,32 @@ This repository contains the high-fidelity backend architecture for **RelayPost*
 
 ## Architecture Overview
 
+RelayPost is composed of a Next.js 14 frontend and four FastAPI microservices:
+
 ### 1. Auth Service (`/auth_service`)
-Handles user registration, authentication (including Google OAuth), and role-based access control (RBAC).
-- **Technology**: FastAPI, SQLAlchemy, PostgreSQL, PyJWT.
-- **Port**: 8000 (Local)
+Handles user registration, JWT authentication, Google OAuth, Role-Based Access Control (RBAC), and Razorpay subscriptions.
+- **Technology**: FastAPI, SQLAlchemy, PostgreSQL, Alembic.
+- **Port**: 8000
 
 ### 2. Content Service (`/content_service`)
-Manages the entire editorial workflow, including article lifecycle (drafts, scheduled, published), categories, keywords, and media management.
-- **Technology**: FastAPI, SQLAlchemy, PostgreSQL, AWS S3 (for future) / Local LargeBinary (current).
-- **Port**: 8001 (Local)
+Manages the editorial workflow, manual article publishing, category management, and Google Gemini AI generation pipelines.
+- **Technology**: FastAPI, SQLAlchemy, PostgreSQL, Alembic, Gemini SDK.
+- **Port**: 8001
+
+### 3. News Service (`/news_service`)
+Automates ingestion of external RSS feeds, clustering of similar news stories, and background AI summarization.
+- **Technology**: FastAPI, PostgreSQL, `newspaper3k`, `feedparser`, APScheduler.
+- **Port**: 8002
+
+### 4. Tracking Service (`/tracking_service`)
+A lightweight, high-throughput service for recording page views and engagement analytics.
+- **Technology**: FastAPI, PostgreSQL.
+- **Port**: 8003
+
+### 5. RelayPost Frontend (`/RelayPost`)
+The public-facing Next.js application and internal CMS admin dashboard.
+- **Technology**: Next.js 14 (App Router), Tailwind CSS.
+- **Port**: 3000
 
 ---
 
@@ -56,17 +73,12 @@ python seed_data.py
 
 ## Local Development (Docker)
 
-To run the entire stack locally with a hot-reloading PostgreSQL:
+To run the entire stack locally using Docker Compose, which sets up the database, `auth_service`, `content_service`, and `news_service`:
+
 ```powershell
-docker-compose up --build
+# Build and start all services in detached mode
+docker compose up -d --build
+
+# Restart services if you make changes to their .env files
+docker compose restart
 ```
-
----
-
-## Backend Troubleshooting
-
-### "Nothing reflected in Neon DB"
-If the seeding script says "Seeding completed successfully!" but you don't see tables in your Neon Dashboard:
-1. **Check Connection String**: Ensure the `DATABASE_URL` in your `.env` file matches the project and branch you are viewing in Neon.
-2. **Neon Branches**: Neon uses branching. Ensure you are checking the "Main" branch (or the branch specified in your URI).
-3. **Database Name**: By default, Neon uses `/neondb`. Confirm if your URI specifies a different database name.
