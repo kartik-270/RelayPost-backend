@@ -182,11 +182,13 @@ def generate_ai_summaries():
     db = SessionLocal()
     try:
         cutoff_48h = datetime.utcnow() - timedelta(hours=48)
+        # Cap at 15 clusters per run. Each cluster needs a Gemini API call + 5s sleep,
+        # so 15 clusters ≈ ~2-3 minutes max, keeping the total pipeline runtime short.
         unsummarized_articles = db.query(models.Article).filter(
             models.Article.cluster_id.isnot(None),
             models.Article.ai_summary.is_(None),
             models.Article.created_at >= cutoff_48h
-        ).limit(50).all()
+        ).limit(15).all()
 
         if not unsummarized_articles:
             return

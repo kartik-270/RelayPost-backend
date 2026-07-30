@@ -1,15 +1,40 @@
 import os
 import html
 import socket
+import signal
+import contextlib
 # Set a global timeout to prevent any networking library (feedparser, cloudinary, etc.) from hanging forever
-socket.setdefaulttimeout(15)
+socket.setdefaulttimeout(10)
 import feedparser
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.models import models
 from app.core.database import SessionLocal
 from newspaper import Article as NewspaperArticle, Config as NewspaperConfig
 import nltk
+
+# Maximum number of NEW articles to process per pipeline cycle.
+# Keeps each run fast (~2-5 min) so health checks never time out.
+MAX_NEW_ARTICLES = 35
+
+@contextlib.contextmanager
+def time_limit(seconds: int):
+    """
+    Context manager that raises TimeoutError if the block takes longer than
+    `seconds`. Uses SIGALRM on POSIX (Linux/Mac). Safe to use only in the
+    main thread of each subprocess (run_all.py runs as __main__).
+    """
+    def _handler(signum, frame):
+        raise TimeoutError(f"Operation exceeded {seconds}s hard limit")
+
+    old_handler = signal.signal(signal.SIGALRM, _handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 try:
     nltk.data.find('tokenizers/punkt')
@@ -152,10 +177,11 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
     start_index = (page - 1) * page_size
     end_index = start_index + page_size
 
-    # Configure newspaper parser with a browser-like user agent to bypass WAF / Cloudflare blocks
+    # Configure newspaper parser with a browser-like user agent to bypass WAF / Cloudflare blocks.
+    # Use a short timeout so slow sites fail fast and don't stall the pipeline.
     config = NewspaperConfig()
     config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    config.request_timeout = 15
+    config.request_timeout = 6
 
     embedding_model = get_embedding_model()
 
@@ -192,25 +218,40 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
 
         print(f"Successfully fetched {len(interleaved_queue)} articles across all feeds. Processing in round-robin order...", flush=True)
 
-        # 3. Process the interleaved queue
+        # 3. Batch-deduplicate against the DB in a SINGLE query instead of
+        #    one session per article (eliminates 210 round-trips to PostgreSQL).
+        all_candidate_urls = [
+            entry.get("link")
+            for _, _, _, entry in interleaved_queue
+            if entry.get("link")
+        ]
+        db_dedup = SessionLocal()
+        try:
+            existing_rows = db_dedup.execute(
+                text("SELECT url FROM articles WHERE url = ANY(:urls)"),
+                {"urls": all_candidate_urls}
+            ).fetchall()
+            existing_urls_in_db = {row[0] for row in existing_rows}
+        except Exception as dedup_e:
+            print(f"Batch dedup query failed: {dedup_e}")
+            existing_urls_in_db = set()
+        finally:
+            db_dedup.close()
+
+        seen_urls.update(existing_urls_in_db)
+
+        # 4. Process the interleaved queue — cap new articles per cycle.
         for category, feed_url, source_title, entry in interleaved_queue:
+            if saved_count >= MAX_NEW_ARTICLES:
+                print(f"Article cap ({MAX_NEW_ARTICLES}) reached. Stopping ingestion for this cycle.", flush=True)
+                break
+
             try:
                 url = entry.get("link")
                 if not url or not entry.get("title"):
                     continue
 
                 if url in seen_urls:
-                    continue
-
-                # Brief session to check if the URL already exists in DB
-                db_check = SessionLocal()
-                try:
-                    existing = db_check.query(models.Article).filter(models.Article.url == url).first()
-                finally:
-                    db_check.close()
-
-                if existing:
-                    seen_urls.add(url)
                     continue
 
                 seen_urls.add(url)
@@ -225,34 +266,38 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                             feed_image_url = link.get("href")
                             break
 
-                # Use newspaper3k to extract full content and image
+                # Use newspaper3k to extract full content and image.
+                # Wrap in time_limit to kill any download that silently hangs
+                # beyond the socket timeout.
                 content = ""
                 image_url = None
                 extracted_keywords = []
                 article_extractor = None
                 try:
-                    article_extractor = NewspaperArticle(url, config=config)
-                    article_extractor.download()
+                    with time_limit(12):  # Hard 12-second ceiling for download+parse
+                        article_extractor = NewspaperArticle(url, config=config)
+                        article_extractor.download()
 
-                    if article_extractor.download_state == 2:
-                        article_extractor.parse()
-                        extracted_keywords = []
+                        if article_extractor.download_state == 2:
+                            article_extractor.parse()
+                            extracted_keywords = []
 
-                        content = article_extractor.text
-                        extracted_image_url = article_extractor.top_image or feed_image_url
-                    else:
-                        print(f"Failed to download article for {url}")
-                        extracted_image_url = feed_image_url
+                            content = article_extractor.text
+                            extracted_image_url = article_extractor.top_image or feed_image_url
+                        else:
+                            print(f"Failed to download article for {url}")
+                            extracted_image_url = feed_image_url
 
                     if extracted_image_url:
                         try:
                             import cloudinary.uploader
-                            upload_result = cloudinary.uploader.upload(
-                                extracted_image_url,
-                                public_id=f"news_{uuid.uuid4().hex[:12]}",
-                                fetch_format="auto",
-                                quality="auto"
-                            )
+                            with time_limit(10):  # Hard 10-second ceiling for Cloudinary upload
+                                upload_result = cloudinary.uploader.upload(
+                                    extracted_image_url,
+                                    public_id=f"news_{uuid.uuid4().hex[:12]}",
+                                    fetch_format="auto",
+                                    quality="auto"
+                                )
                             image_url = upload_result.get("secure_url")
                         except Exception as cloudinary_e:
                             print(f"Cloudinary upload failed for {extracted_image_url}: {cloudinary_e}")
