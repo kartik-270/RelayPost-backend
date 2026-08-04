@@ -1,0 +1,42 @@
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean, Index
+from sqlalchemy.sql import func
+from sqlalchemy.dialects.postgresql import JSONB
+from app.core.database import Base
+from pgvector.sqlalchemy import HALFVEC
+import datetime
+
+class Article(Base):
+    __tablename__ = "articles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    description = Column(Text, nullable=True)
+    content = Column(Text, nullable=True)
+    source_name = Column(String, index=True, nullable=True)
+    author = Column(String, nullable=True)
+    url = Column(String, unique=True, index=True)
+    image_url = Column(String, nullable=True)
+    published_at = Column(DateTime, index=True, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    category = Column(String, index=True, nullable=True)
+    keywords = Column(JSON, nullable=True)
+    cluster_id = Column(Integer, index=True, nullable=True)
+    ai_summary = Column(Text, nullable=True) 
+    slug = Column(String, unique=True, index=True, nullable=True)
+    meta_title = Column(String, nullable=True)
+    meta_description = Column(Text, nullable=True)
+    is_verified = Column(Boolean, default=False)
+    full_analysis = Column(Text, nullable=True)
+    views = Column(Integer, default=0, nullable=False)
+    embedding = Column(HALFVEC(384), nullable=True)
+
+    __table_args__ = (
+        Index('article_embedding_idx', 'embedding', postgresql_using='hnsw', postgresql_with={'m': 16, 'ef_construction': 64}, postgresql_ops={'embedding': 'halfvec_cosine_ops'}),
+    )
+
+class SystemCache(Base):
+    __tablename__ = "system_cache"
+    key = Column(String, primary_key=True, index=True)
+    value = Column(JSONB)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+

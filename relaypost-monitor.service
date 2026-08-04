@@ -1,0 +1,17 @@
+[Unit]
+Description=RelayPost Service Monitor (auto-restarts news_service and news_generation_service)
+Documentation=https://github.com/your-org/relaypost-backend
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /usr/local/bin/monitor_services.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/relaypost-monitor.log
+StandardError=append:/var/log/relaypost-monitor.log
+
+[Install]
+WantedBy=multi-user.target
