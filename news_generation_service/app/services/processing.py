@@ -365,11 +365,11 @@ def generate_ai_summaries():
                             re.search(r'Please retry in (\d+)', error_msg) or
                             re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', error_msg)
                         )
-                        wait_time = int(match.group(1)) + 5 if match else 60 * (attempt + 1)
+                        wait_time = int(match.group(1)) + 5 if match else min(30 * (attempt + 1), 60)
                         print(f"Rate limited. Retrying in {wait_time}s...", flush=True)
                         time.sleep(wait_time)
                 elif attempt < max_retries - 1:
-                    time.sleep(10)
+                    time.sleep(15)  # Short pause for non-rate-limit errors
 
         # --- Phase 3: Write result to DB with a FRESH short-lived session ---
         # Each write opens, commits, and closes its own session immediately.
