@@ -3,6 +3,7 @@ import html
 import socket
 import signal
 import contextlib
+import gc
 # Set a global timeout to prevent any networking library (feedparser, cloudinary, etc.) from hanging forever
 socket.setdefaulttimeout(10)
 import feedparser
@@ -14,9 +15,11 @@ from app.core.database import SessionLocal
 from newspaper import Article as NewspaperArticle, Config as NewspaperConfig
 import nltk
 
-# Maximum number of NEW articles to process per pipeline cycle.
-# Keeps each run fast (~2-5 min) so health checks never time out.
-MAX_NEW_ARTICLES = 35
+# Batch size for memory-safe processing.
+# Articles are processed in chunks of BATCH_SIZE. After each batch, gc.collect()
+# is called to reclaim lxml DOM trees before the next batch is started.
+# Peak memory stays flat at ~BATCH_SIZE × 3 MB regardless of total article count.
+BATCH_SIZE = 15
 
 @contextlib.contextmanager
 def time_limit(seconds: int):
@@ -240,152 +243,184 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
 
         seen_urls.update(existing_urls_in_db)
 
-        # 4. Process the interleaved queue — cap new articles per cycle.
-        for category, feed_url, source_title, entry in interleaved_queue:
-            if saved_count >= MAX_NEW_ARTICLES:
-                print(f"Article cap ({MAX_NEW_ARTICLES}) reached. Stopping ingestion for this cycle.", flush=True)
-                break
+        # 4. Process articles in memory-safe batches of BATCH_SIZE.
+        #    After each batch, gc.collect() reclaims lxml DOM trees so peak
+        #    memory stays flat (~BATCH_SIZE × 3 MB) regardless of total count.
+        total = len(interleaved_queue)
+        num_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
 
-            try:
-                url = entry.get("link")
-                if not url or not entry.get("title"):
-                    continue
+        for batch_num in range(num_batches):
+            batch_start = batch_num * BATCH_SIZE
+            batch_end   = batch_start + BATCH_SIZE
+            batch       = interleaved_queue[batch_start:batch_end]
 
-                if url in seen_urls:
-                    continue
+            print(
+                f"\n── Batch {batch_num + 1}/{num_batches} "
+                f"(articles {batch_start + 1}–{min(batch_end, total)} of {total}) ──",
+                flush=True
+            )
 
-                seen_urls.add(url)
-
-                # Fallback image extraction from RSS feed
-                feed_image_url = None
-                if "media_content" in entry and entry.media_content:
-                    feed_image_url = entry.media_content[0].get("url")
-                elif hasattr(entry, "links"):
-                    for link in entry.links:
-                        if link.get("type") and "image" in link.get("type"):
-                            feed_image_url = link.get("href")
-                            break
-
-                # Use newspaper3k to extract full content and image.
-                # Wrap in time_limit to kill any download that silently hangs
-                # beyond the socket timeout.
-                content = ""
-                image_url = None
-                extracted_keywords = []
-                article_extractor = None
+            for category, feed_url, source_title, entry in batch:
                 try:
-                    with time_limit(12):  # Hard 12-second ceiling for download+parse
-                        article_extractor = NewspaperArticle(url, config=config)
-                        article_extractor.download()
+                    url = entry.get("link")
+                    if not url or not entry.get("title"):
+                        continue
 
-                        if article_extractor.download_state == 2:
-                            article_extractor.parse()
-                            extracted_keywords = []
+                    if url in seen_urls:
+                        continue
 
-                            content = article_extractor.text
-                            extracted_image_url = article_extractor.top_image or feed_image_url
-                        else:
-                            print(f"Failed to download article for {url}")
-                            extracted_image_url = feed_image_url
+                    seen_urls.add(url)
 
-                    if extracted_image_url:
-                        try:
-                            import cloudinary.uploader
-                            with time_limit(10):  # Hard 10-second ceiling for Cloudinary upload
-                                upload_result = cloudinary.uploader.upload(
-                                    extracted_image_url,
-                                    public_id=f"news_{uuid.uuid4().hex[:12]}",
-                                    fetch_format="auto",
-                                    quality="auto"
-                                )
-                            image_url = upload_result.get("secure_url")
-                        except Exception as cloudinary_e:
-                            print(f"Cloudinary upload failed for {extracted_image_url}: {cloudinary_e}")
-                            image_url = extracted_image_url
-                except Exception as e:
-                    print(f"Failed to extract full content for {url}: {e}")
+                    # Fallback image extraction from RSS feed
+                    feed_image_url = None
+                    if "media_content" in entry and entry.media_content:
+                        feed_image_url = entry.media_content[0].get("url")
+                    elif hasattr(entry, "links"):
+                        for link in entry.links:
+                            if link.get("type") and "image" in link.get("type"):
+                                feed_image_url = link.get("href")
+                                break
 
-                if not image_url:
-                    print(f"Warning: Article saved without an image: {url}")
-
-                # Build description
-                description = ""
-                if article_extractor and hasattr(article_extractor, 'summary') and article_extractor.summary:
-                    description = article_extractor.summary
-                else:
-                    description_raw = html.unescape(entry.get("description", "") or "")
-                    description = re.sub(r'<[^>]+>', '', description_raw).strip()
-                    if description.endswith("[...]") or description.endswith("...") or description.endswith("…"):
-                        if content and len(content) > 100:
-                            description = content[:200].rsplit(' ', 1)[0] + "..."
-
-                if not description and content:
-                    description = content[:200].rsplit(' ', 1)[0] + "..."
-                elif not content:
-                    content = description
-
-                # Parse date
-                published_at = datetime.utcnow()
-                if entry.get("published_parsed"):
+                    # Use newspaper3k to extract full content and image.
+                    # Wrap in time_limit to kill any download that silently hangs
+                    # beyond the socket timeout.
+                    content = ""
+                    image_url = None
+                    extracted_keywords = []
+                    extracted_image_url = feed_image_url
+                    article_extractor = None
                     try:
-                        published_at = datetime(*entry.published_parsed[:6])
-                    except:
-                        pass
+                        with time_limit(12):  # Hard 12-second ceiling for download+parse
+                            article_extractor = NewspaperArticle(url, config=config)
+                            article_extractor.download()
 
-                title = html.unescape(entry.get("title", ""))
+                            if article_extractor.download_state == 2:
+                                article_extractor.parse()
+                                extracted_keywords = []
+                                content = article_extractor.text
+                                extracted_image_url = article_extractor.top_image or feed_image_url
+                                # ── Memory: strip large HTML/DOM blobs immediately
+                                # after parsing — we only need .text and .top_image.
+                                article_extractor.html = ""
+                                article_extractor.clean_top_node = None
+                                article_extractor.top_node = None
+                            else:
+                                print(f"Failed to download article for {url}")
 
-                base_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', title).strip().lower()
-                base_slug = re.sub(r'[-\s]+', '-', base_slug)
-                unique_id = str(uuid.uuid4())[:8]
-                slug = f"{base_slug[:100]}-{unique_id}" if base_slug else unique_id
+                        if extracted_image_url:
+                            try:
+                                import cloudinary.uploader
+                                with time_limit(10):  # Hard 10-second ceiling for Cloudinary upload
+                                    upload_result = cloudinary.uploader.upload(
+                                        extracted_image_url,
+                                        public_id=f"news_{uuid.uuid4().hex[:12]}",
+                                        fetch_format="auto",
+                                        quality="auto"
+                                    )
+                                image_url = upload_result.get("secure_url")
+                            except Exception as cloudinary_e:
+                                print(f"Cloudinary upload failed for {extracted_image_url}: {cloudinary_e}")
+                                image_url = extracted_image_url
+                    except Exception as e:
+                        print(f"Failed to extract full content for {url}: {e}")
+                    finally:
+                        # ── Memory: always release the newspaper Article object.
+                        # Each parsed article holds a multi-MB lxml DOM tree.
+                        del article_extractor
+                        article_extractor = None
 
-                # --- Embed this article individually ---
-                embedding = None
-                try:
-                    text_for_embedding = f"{title} {description}"
-                    embedding = embedding_model.embed_one(text_for_embedding)
-                    time.sleep(0.5)  # Light rate-limit guard between embed calls
-                except Exception as embed_e:
-                    print(f"Embedding failed for {url}: {embed_e}")
+                    if not image_url:
+                        print(f"Warning: Article saved without an image: {url}")
 
-                # Brief session to save the article to DB immediately
-                db_write = SessionLocal()
-                try:
-                    from sqlalchemy.dialects.postgresql import insert as pg_insert
-                    stmt = pg_insert(models.Article).values(
-                        title=title,
-                        description=description,
-                        content=content,
-                        source_name=source_title,
-                        author=entry.get("author"),
-                        url=url,
-                        image_url=image_url,
-                        published_at=published_at,
-                        category=category,
-                        keywords=extracted_keywords,
-                        is_verified=False,
-                        slug=slug,
-                        embedding=embedding
-                    ).on_conflict_do_nothing(index_elements=['url'])
-                    
-                    result = db_write.execute(stmt)
-                    db_write.commit()
-                    if result.rowcount:
-                        saved_count += 1
-                        print(f"Saved article #{saved_count}: {title[:60]}")
+                    # Build description
+                    description = ""
+                    if article_extractor and hasattr(article_extractor, 'summary') and article_extractor.summary:
+                        description = article_extractor.summary
                     else:
-                        print(f"Skipped duplicate (race condition prevented): {url}")
-                except Exception as db_e:
-                    db_write.rollback()
-                    failed_count += 1
-                    print(f"Failed to save article ({url}): {db_e}")
-                finally:
-                    db_write.close()
+                        description_raw = html.unescape(entry.get("description", "") or "")
+                        description = re.sub(r'<[^>]+>', '', description_raw).strip()
+                        if description.endswith("[...]") or description.endswith("...") or description.endswith("\u2026"):
+                            if content and len(content) > 100:
+                                description = content[:200].rsplit(' ', 1)[0] + "..."
 
-            except Exception as e:
-                print(f"Error processing article from feed {feed_url}: {e}")
+                    if not description and content:
+                        description = content[:200].rsplit(' ', 1)[0] + "..."
+                    elif not content:
+                        content = description
 
-        print(f"Ingestion complete: {saved_count} saved, {failed_count} failed.", flush=True)
+                    # Parse date
+                    published_at = datetime.utcnow()
+                    if entry.get("published_parsed"):
+                        try:
+                            published_at = datetime(*entry.published_parsed[:6])
+                        except:
+                            pass
+
+                    title = html.unescape(entry.get("title", ""))
+
+                    base_slug = re.sub(r'[^a-zA-Z0-9\s-]', '', title).strip().lower()
+                    base_slug = re.sub(r'[-\s]+', '-', base_slug)
+                    unique_id = str(uuid.uuid4())[:8]
+                    slug = f"{base_slug[:100]}-{unique_id}" if base_slug else unique_id
+
+                    # --- Embed this article individually ---
+                    embedding = None
+                    try:
+                        text_for_embedding = f"{title} {description}"
+                        embedding = embedding_model.embed_one(text_for_embedding)
+                        time.sleep(0.5)  # Light rate-limit guard between embed calls
+                    except Exception as embed_e:
+                        print(f"Embedding failed for {url}: {embed_e}")
+
+                    # Brief session to save the article to DB immediately
+                    db_write = SessionLocal()
+                    try:
+                        from sqlalchemy.dialects.postgresql import insert as pg_insert
+                        stmt = pg_insert(models.Article).values(
+                            title=title,
+                            description=description,
+                            content=content,
+                            source_name=source_title,
+                            author=entry.get("author"),
+                            url=url,
+                            image_url=image_url,
+                            published_at=published_at,
+                            category=category,
+                            keywords=extracted_keywords,
+                            is_verified=False,
+                            slug=slug,
+                            embedding=embedding
+                        ).on_conflict_do_nothing(index_elements=['url'])
+
+                        result = db_write.execute(stmt)
+                        db_write.commit()
+                        if result.rowcount:
+                            saved_count += 1
+                            print(f"Saved article #{saved_count}: {title[:60]}")
+                        else:
+                            print(f"Skipped duplicate (race condition prevented): {url}")
+                    except Exception as db_e:
+                        db_write.rollback()
+                        failed_count += 1
+                        print(f"Failed to save article ({url}): {db_e}")
+                    finally:
+                        db_write.close()
+
+                except Exception as e:
+                    print(f"Error processing article from feed {feed_url}: {e}")
+
+            # ── End of batch: force GC to reclaim all lxml/BeautifulSoup objects
+            # from this batch before loading the next batch into memory.
+            gc.collect()
+            if batch_num < num_batches - 1:
+                print(
+                    f"Batch {batch_num + 1} complete "
+                    f"({saved_count} saved so far). GC done. Starting next batch...",
+                    flush=True
+                )
+                time.sleep(1)  # Brief OS-level memory reclaim pause between batches
+
+        print(f"\nIngestion complete: {saved_count} saved, {failed_count} failed across {num_batches} batch(es).", flush=True)
     except Exception as outer_e:
         print(f"Unhandled error in ingestion pipeline: {outer_e}")
 
