@@ -57,18 +57,29 @@ def scheduled_job():
 
     def watchdog(p: subprocess.Popen, timeout: int):
         """
-        Uses communicate(timeout=) which atomically drains stdout AND waits for
-        the process to exit. This avoids the classic deadlock where:
-          1. The subprocess fills the pipe buffer writing to stdout.
-          2. The parent's readline() loop blocks reading the pipe.
-          3. p.wait() is never reached so the process guard never resets.
-        communicate() handles draining internally via a background thread,
-        so neither end can deadlock on the pipe.
+        Streams stdout in real-time AND enforces a hard timeout.
+
+        A reader thread continuously drains stdout line-by-line so:
+          1. The subprocess can never block on a full pipe buffer.
+          2. Log output appears immediately in the parent's logs.
+
+        The main thread calls p.wait(timeout=timeout) independently,
+        so the timeout fires even if the subprocess is completely silent
+        (e.g. frozen during an import or a network call with no output).
         """
+        def _stream_output():
+            try:
+                for line in iter(p.stdout.readline, b""):
+                    print(line.decode(errors="replace"), end="", flush=True)
+            except Exception:
+                pass
+
+        reader = threading.Thread(target=_stream_output, daemon=True)
+        reader.start()
+
         try:
-            stdout_data, _ = p.communicate(timeout=timeout)
-            if stdout_data:
-                print(stdout_data.decode(errors="replace"), end="", flush=True)
+            p.wait(timeout=timeout)
+            reader.join(timeout=5)
             print(f"Pipeline process {p.pid} exited with code {p.returncode}.", flush=True)
         except subprocess.TimeoutExpired:
             print(
@@ -76,19 +87,14 @@ def scheduled_job():
                 flush=True,
             )
             p.kill()
-            # Drain remaining output after kill so the pipe doesn't block
-            try:
-                stdout_data, _ = p.communicate(timeout=10)
-                if stdout_data:
-                    print(stdout_data.decode(errors="replace"), end="", flush=True)
-            except Exception:
-                pass
+            p.wait()
+            reader.join(timeout=5)
             print(f"Pipeline watchdog: process {p.pid} killed.", flush=True)
         except Exception as e:
             print(f"Pipeline watchdog error: {e}", flush=True)
             try:
                 p.kill()
-                p.communicate(timeout=5)
+                p.wait()
             except Exception:
                 pass
 

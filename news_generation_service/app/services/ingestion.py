@@ -219,6 +219,10 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                 if i < len(entries):
                     interleaved_queue.append((category, feed_url, source_title, entries[i]))
 
+        # Clear feed_data_list and force garbage collection before processing
+        del feed_data_list
+        gc.collect()
+
         print(f"Successfully fetched {len(interleaved_queue)} articles across all feeds. Processing in round-robin order...", flush=True)
 
         # 3. Batch-deduplicate against the DB in a SINGLE query instead of
