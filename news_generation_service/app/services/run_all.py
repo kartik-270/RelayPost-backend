@@ -12,7 +12,18 @@ try:
 except ImportError:
     pass
 
-from app.services.ingestion import process_and_store_articles
+try:
+    import cloudinary
+    if os.environ.get("CLOUDINARY_CLOUD_NAME"):
+        cloudinary.config(
+            cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
+            api_key=os.environ.get("CLOUDINARY_API_KEY"),
+            api_secret=os.environ.get("CLOUDINARY_API_SECRET")
+        )
+except Exception:
+    pass
+
+from app.services.ingestion import process_and_store_articles, trim_memory
 from app.services.processing import update_article_clusters, generate_ai_summaries
 from app.services.cache import update_top_news_cache
 
@@ -20,9 +31,17 @@ if __name__ == "__main__":
     try:
         print("Starting isolated ingestion and processing pipeline...", flush=True)
         process_and_store_articles(page=1, page_size=10)
+        trim_memory()
+
         update_article_clusters()
+        trim_memory()
+
         generate_ai_summaries()
+        trim_memory()
+
         update_top_news_cache()
+        trim_memory()
+
         print("Pipeline completed successfully.", flush=True)
     except Exception as e:
         import traceback

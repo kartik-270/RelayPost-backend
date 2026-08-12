@@ -29,7 +29,7 @@ def backfill_missing_embeddings():
             models.Article.embedding == None,
             models.Article.cluster_id == None,
             models.Article.created_at >= cutoff
-        ).all()
+        ).limit(20).all()
 
         if not articles_without_embeddings:
             return
@@ -112,7 +112,7 @@ def update_article_clusters():
         unclustered_articles = db.query(models.Article).filter(
             models.Article.cluster_id == None,
             models.Article.created_at >= cutoff
-        ).all()
+        ).limit(50).all()
         if not unclustered_articles:
             return
         
@@ -220,8 +220,8 @@ def generate_ai_summaries():
         db.close()  # <-- DB connection fully released before any Gemini call
     # ---------------------------------------------------------------
 
-    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-3.1-flash-lite")
-    fallback_model_name = "gemma-4-31b-it"
+    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
+    fallback_model_name = "gemini-2.0-flash-lite"
     primary_key = os.getenv("GEMINI_API_KEY")
     secondary_key = os.getenv("GEMINI_API_KEY_SECONDARY")
     tertiary_key = os.getenv("GEMINI_API_KEY_TERTIARY")

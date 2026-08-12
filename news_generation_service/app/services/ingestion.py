@@ -15,11 +15,17 @@ from app.core.database import SessionLocal
 from newspaper import Article as NewspaperArticle, Config as NewspaperConfig
 import nltk
 
+import ctypes
+
 # Batch size for memory-safe processing.
-# Articles are processed in chunks of BATCH_SIZE. After each batch, gc.collect()
-# is called to reclaim lxml DOM trees before the next batch is started.
-# Peak memory stays flat at ~BATCH_SIZE × 3 MB regardless of total article count.
-BATCH_SIZE = 15
+BATCH_SIZE = 10
+
+def trim_memory():
+    gc.collect()
+    try:
+        ctypes.CDLL('libc.so.6').malloc_trim(0)
+    except Exception:
+        pass
 
 @contextlib.contextmanager
 def time_limit(seconds: int):
@@ -221,7 +227,7 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
 
         # Clear feed_data_list and force garbage collection before processing
         del feed_data_list
-        gc.collect()
+        trim_memory()
 
         print(f"Successfully fetched {len(interleaved_queue)} articles across all feeds. Processing in round-robin order...", flush=True)
 
@@ -248,8 +254,6 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
         seen_urls.update(existing_urls_in_db)
 
         # 4. Process articles in memory-safe batches of BATCH_SIZE.
-        #    After each batch, gc.collect() reclaims lxml DOM trees so peak
-        #    memory stays flat (~BATCH_SIZE × 3 MB) regardless of total count.
         total = len(interleaved_queue)
         num_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
 
@@ -265,6 +269,7 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
             )
 
             for category, feed_url, source_title, entry in batch:
+
                 try:
                     url = entry.get("link")
                     if not url or not entry.get("title"):
@@ -286,12 +291,11 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                                 break
 
                     # Use newspaper3k to extract full content and image.
-                    # Wrap in time_limit to kill any download that silently hangs
-                    # beyond the socket timeout.
                     content = ""
                     image_url = None
                     extracted_keywords = []
                     extracted_image_url = feed_image_url
+                    article_summary = ""
                     article_extractor = None
                     try:
                         with time_limit(12):  # Hard 12-second ceiling for download+parse
@@ -303,8 +307,9 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                                 extracted_keywords = []
                                 content = article_extractor.text
                                 extracted_image_url = article_extractor.top_image or feed_image_url
+                                if hasattr(article_extractor, 'summary'):
+                                    article_summary = article_extractor.summary
                                 # ── Memory: strip large HTML/DOM blobs immediately
-                                # after parsing — we only need .text and .top_image.
                                 article_extractor.html = ""
                                 article_extractor.clean_top_node = None
                                 article_extractor.top_node = None
@@ -323,13 +328,10 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                                     )
                                 image_url = upload_result.get("secure_url")
                             except Exception as cloudinary_e:
-                                print(f"Cloudinary upload failed for {extracted_image_url}: {cloudinary_e}")
                                 image_url = extracted_image_url
                     except Exception as e:
                         print(f"Failed to extract full content for {url}: {e}")
                     finally:
-                        # ── Memory: always release the newspaper Article object.
-                        # Each parsed article holds a multi-MB lxml DOM tree.
                         del article_extractor
                         article_extractor = None
 
@@ -337,10 +339,8 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                         print(f"Warning: Article saved without an image: {url}")
 
                     # Build description
-                    description = ""
-                    if article_extractor and hasattr(article_extractor, 'summary') and article_extractor.summary:
-                        description = article_extractor.summary
-                    else:
+                    description = article_summary
+                    if not description:
                         description_raw = html.unescape(entry.get("description", "") or "")
                         description = re.sub(r'<[^>]+>', '', description_raw).strip()
                         if description.endswith("[...]") or description.endswith("...") or description.endswith("\u2026"):
@@ -372,7 +372,7 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                     try:
                         text_for_embedding = f"{title} {description}"
                         embedding = embedding_model.embed_one(text_for_embedding)
-                        time.sleep(0.5)  # Light rate-limit guard between embed calls
+                        time.sleep(0.3)  # Light rate-limit guard between embed calls
                     except Exception as embed_e:
                         print(f"Embedding failed for {url}: {embed_e}")
 
@@ -413,18 +413,17 @@ def process_and_store_articles(page: int = 1, page_size: int = 10):
                 except Exception as e:
                     print(f"Error processing article from feed {feed_url}: {e}")
 
-            # ── End of batch: force GC to reclaim all lxml/BeautifulSoup objects
-            # from this batch before loading the next batch into memory.
-            gc.collect()
+            # ── End of batch: force GC and glibc malloc_trim to reclaim memory
+            trim_memory()
             if batch_num < num_batches - 1:
                 print(
                     f"Batch {batch_num + 1} complete "
-                    f"({saved_count} saved so far). GC done. Starting next batch...",
+                    f"({saved_count} saved so far). Memory trimmed. Starting next batch...",
                     flush=True
                 )
-                time.sleep(1)  # Brief OS-level memory reclaim pause between batches
+                time.sleep(0.5)
 
-        print(f"\nIngestion complete: {saved_count} saved, {failed_count} failed across {num_batches} batch(es).", flush=True)
+        print(f"\nIngestion complete: {saved_count} saved, {failed_count} failed across batches.", flush=True)
     except Exception as outer_e:
         print(f"Unhandled error in ingestion pipeline: {outer_e}")
 
