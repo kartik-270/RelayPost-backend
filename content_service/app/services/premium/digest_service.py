@@ -182,21 +182,28 @@ Write a high-quality, editorial intelligence briefing. Return ONLY valid JSON (n
 def generate_digest_ai(top_articles: list[dict], top_news: list[dict], week_label: str) -> dict:
     """Call Gemini and parse the structured digest sections."""
     prompt = _build_digest_prompt(top_articles, top_news, week_label)
+    
+    def _validate(d: dict) -> dict:
+        if not d.get("executive_summary"):
+            raise ValueError("Parsed JSON is missing 'executive_summary' or it is empty.")
+        return d
+
     try:
         raw = _call_gemini(prompt, max_tokens=2000, response_mime_type="application/json")
         import json, re
         # Strip markdown code blocks if present
         raw = re.sub(r"```(?:json)?", "", raw).strip().rstrip("`").strip()
         data = json.loads(raw)
-        return data
+        return _validate(data)
     except Exception as e:
-        print(f"[DIGEST AI] JSON parse failed, retrying plain: {e}")
+        print(f"[DIGEST AI] Attempt 1 failed, retrying plain: {e}")
         try:
             raw = _call_gemini(prompt, max_tokens=2000)
             import json, re
             match = re.search(r'\{.*\}', raw, re.DOTALL)
             if match:
-                return json.loads(match.group())
+                data = json.loads(match.group())
+                return _validate(data)
         except Exception as e2:
             print(f"[DIGEST AI] Both attempts failed: {e2}")
             raise RuntimeError(f"AI digest generation failed: {e2}")
