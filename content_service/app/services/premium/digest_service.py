@@ -199,15 +199,9 @@ def generate_digest_ai(top_articles: list[dict], top_news: list[dict], week_labe
                 return json.loads(match.group())
         except Exception as e2:
             print(f"[DIGEST AI] Both attempts failed: {e2}")
-    # Fallback skeleton
-    return {
-        "executive_summary": "The editorial team is compiling this week's briefing. Check back shortly.",
-        "major_themes": "• Digest generation in progress.",
-        "emerging_signals": "• Analysis pending.",
-        "editors_note": "The week in review will be available shortly.",
-        "stat_of_week": "",
-        "what_to_watch": [],
-    }
+            raise RuntimeError(f"AI digest generation failed: {e2}")
+    
+    raise RuntimeError("AI digest generation failed unexpectedly.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

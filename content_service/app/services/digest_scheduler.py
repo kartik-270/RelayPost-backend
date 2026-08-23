@@ -59,6 +59,7 @@ async def _fetch_all_users() -> list[dict]:
 
 
 async def _send_email_to_user(
+    client: httpx.AsyncClient,
     user: dict,
     digest_dict: dict,
     opt_out_url: str,
@@ -66,19 +67,18 @@ async def _send_email_to_user(
 ) -> bool:
     """Send weekly digest email to a single user via auth_service mail endpoint."""
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(
-                f"{AUTH_SERVICE_URL}/internal/send-digest-email",
-                headers={"X-Internal-Secret": INTERNAL_SECRET},
-                json={
-                    "email":        user["email"],
-                    "display_name": user.get("display_name") or user["email"].split("@")[0],
-                    "digest":       digest_dict,
-                    "opt_out_url":  opt_out_url,
-                    "frontend_url": FRONTEND_URL,
-                },
-            )
-            return resp.status_code == 200
+        resp = await client.post(
+            f"{AUTH_SERVICE_URL}/internal/send-digest-email",
+            headers={"X-Internal-Secret": INTERNAL_SECRET},
+            json={
+                "email":        user["email"],
+                "display_name": user.get("display_name") or user["email"].split("@")[0],
+                "digest":       digest_dict,
+                "opt_out_url":  opt_out_url,
+                "frontend_url": FRONTEND_URL,
+            },
+        )
+        return resp.status_code == 200
     except Exception as e:
         log.warning(f"[DIGEST EMAIL] Failed for {user.get('email')}: {e}")
         return False
@@ -103,75 +103,91 @@ async def _run_digest_job():
     log.info("[DIGEST] Starting weekly digest job...")
 
     try:
-        # ── Step 1: Pause content automation ─────────────────────────────────
-        log.info("[DIGEST] Pausing article automation...")
-        automation_scheduler.pause_automation()
-
-        # ── Step 2: Generate + persist digest ────────────────────────────────
-        digest = await publish_weekly_digest(db)
-        if not digest:
-            log.error("[DIGEST] Digest generation returned None — aborting email dispatch.")
-            return
-
-        digest_dict = _digest_to_dict(digest)
-        week_label  = digest.week_label
-
-        # ── Step 3: Skip email if already sent this week ──────────────────────
-        if digest.is_sent:
-            log.info(f"[DIGEST] Emails already sent for {week_label} — skipping dispatch.")
-            return
-
-        # ── Step 4: Fetch users + filter opt-outs ────────────────────────────
-        all_users = await _fetch_all_users()
-        if not all_users:
-            log.warning("[DIGEST] No users returned from auth_service — skipping email batch.")
-            return
-
-        # Build opt-out set
-        opted_out_ids = {
-            str(row.user_id)
-            for row in db.query(DigestOptOut.user_id).all()
-        }
-
-        recipients = [u for u in all_users if u.get("user_id") not in opted_out_ids]
-        log.info(f"[DIGEST] Sending to {len(recipients)} users ({len(all_users) - len(recipients)} opted out)...")
-
-        # ── Step 5: Batched email dispatch ────────────────────────────────────
-        emails_sent = 0
-        for i in range(0, len(recipients), BATCH_SIZE):
-            batch = recipients[i : i + BATCH_SIZE]
-            log.info(f"[DIGEST] Batch {i // BATCH_SIZE + 1}: sending {len(batch)} emails...")
-
-            tasks = []
-            for user in batch:
-                user_id = user.get("user_id", "")
-                opt_out_url = f"{FRONTEND_URL}/digest/opt-out?user_id={user_id}&token={user_id}"
-                tasks.append(_send_email_to_user(user, digest_dict, opt_out_url, user.get("display_name", "")))
-
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            batch_sent = sum(1 for r in results if r is True)
-            emails_sent += batch_sent
-            log.info(f"[DIGEST] Batch done: {batch_sent}/{len(batch)} sent successfully.")
-
-            # Pause between batches to avoid SMTP rate limits
-            if i + BATCH_SIZE < len(recipients):
-                await asyncio.sleep(BATCH_DELAY_SEC)
-
-        # ── Step 6: Mark digest as sent ───────────────────────────────────────
-        digest.is_sent    = True
-        digest.emails_sent = emails_sent
-        db.commit()
-        log.info(f"[DIGEST] Completed. {emails_sent} emails dispatched for {week_label}.")
-
-    except Exception as e:
-        log.error(f"[DIGEST] Job failed: {e}", exc_info=True)
+        for attempt in range(4):
+            try:
+                # ── Step 1: Pause content automation ─────────────────────────────────
+                log.info("[DIGEST] Pausing article automation...")
+                automation_scheduler.pause_automation()
+        
+                # ── Step 2: Generate + persist digest ────────────────────────────────
+                digest = await publish_weekly_digest(db)
+                if not digest:
+                    log.error("[DIGEST] Digest generation returned None — aborting email dispatch.")
+                    return
+        
+                digest_dict = _digest_to_dict(digest)
+                week_label  = digest.week_label
+        
+                # ── Step 3: Skip email if already sent this week ──────────────────────
+                if digest.is_sent:
+                    log.info(f"[DIGEST] Emails already sent for {week_label} — skipping dispatch.")
+                    return
+        
+                # ── Step 4: Fetch users + filter opt-outs ────────────────────────────
+                all_users = await _fetch_all_users()
+                if not all_users:
+                    log.warning("[DIGEST] No users returned from auth_service — skipping email batch.")
+                    return
+        
+                # Build opt-out set
+                opted_out_ids = {
+                    str(row.user_id)
+                    for row in db.query(DigestOptOut.user_id).all()
+                }
+        
+                recipients = [u for u in all_users if u.get("user_id") not in opted_out_ids]
+                log.info(f"[DIGEST] Sending to {len(recipients)} users ({len(all_users) - len(recipients)} opted out)...")
+        
+                # ── Step 5: Batched email dispatch ────────────────────────────────────
+                emails_sent = 0
+                
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    for i in range(0, len(recipients), BATCH_SIZE):
+                        batch = recipients[i : i + BATCH_SIZE]
+                        log.info(f"[DIGEST] Batch {i // BATCH_SIZE + 1}: sending {len(batch)} emails...")
+        
+                        tasks = []
+                        for user in batch:
+                            user_id = user.get("user_id", "")
+                            opt_out_url = f"{FRONTEND_URL}/digest/opt-out?user_id={user_id}&token={user_id}"
+                            tasks.append(_send_email_to_user(client, user, digest_dict, opt_out_url, user.get("display_name", "")))
+        
+                        results = await asyncio.gather(*tasks, return_exceptions=True)
+                        batch_sent = sum(1 for r in results if r is True)
+                        emails_sent += batch_sent
+                        log.info(f"[DIGEST] Batch done: {batch_sent}/{len(batch)} sent successfully.")
+        
+                        # Pause between batches to avoid SMTP rate limits
+                        if i + BATCH_SIZE < len(recipients):
+                            await asyncio.sleep(BATCH_DELAY_SEC)
+        
+                # ── Step 6: Mark digest as sent ───────────────────────────────────────
+                digest.is_sent    = True
+                digest.emails_sent = emails_sent
+                db.commit()
+                log.info(f"[DIGEST] Completed. {emails_sent} emails dispatched for {week_label}.")
+                break  # Success, exit the retry loop
+                
+            except Exception as e:
+                db.rollback()  # Ensure session is clean for next retry or unlock
+                log.error(f"[DIGEST] Job failed on attempt {attempt + 1}: {e}", exc_info=True)
+                if attempt < 3:
+                    log.info("[DIGEST] Retrying in 5 minutes...")
+                    await asyncio.sleep(300)
+                else:
+                    log.error("[DIGEST] All attempts exhausted. Aborting.")
+                    
     finally:
         # ALWAYS resume automation + release lock
         log.info("[DIGEST] Resuming article automation...")
         automation_scheduler.resume_automation()
-        db.execute(text(f"SELECT pg_advisory_unlock({ADVISORY_LOCK_ID})"))
-        db.commit()
-        db.close()
+        try:
+            db.execute(text(f"SELECT pg_advisory_unlock({ADVISORY_LOCK_ID})"))
+            db.commit()
+        except Exception as unlock_err:
+            log.error(f"[DIGEST] Failed to unlock: {unlock_err}")
+        finally:
+            db.close()
         log.info("[DIGEST] Lock released.")
 
 
