@@ -182,16 +182,16 @@ class GeminiTool:
 # --- Email Tool ---
 class EmailTool:
     def __init__(self):
-        smtp_port = int(os.getenv("SMTP_PORT", "465"))
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
         use_starttls = smtp_port == 587
         use_ssl = smtp_port == 465
         self.conf = ConnectionConfig(
             MAIL_USERNAME=os.getenv("SMTP_USERNAME"),
             MAIL_PASSWORD=os.getenv("SMTP_PASSWORD"),
-            MAIL_FROM=os.getenv("SMTP_USERNAME", "no-reply@relaypost.com"),
+            MAIL_FROM=os.getenv("SMTP_FROM", os.getenv("SMTP_USERNAME", "no-reply@relaypost.me")),
             MAIL_PORT=smtp_port,
             MAIL_SERVER=os.getenv("SMTP_SERVER", "smtp.gmail.com"),
-            MAIL_FROM_NAME="RelayPost Intelligence Automation",
+            MAIL_FROM_NAME=os.getenv("SMTP_FROM_NAME", "RelayPost"),
             MAIL_STARTTLS=use_starttls,
             MAIL_SSL_TLS=use_ssl,
             USE_CREDENTIALS=True,

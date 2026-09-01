@@ -5,13 +5,22 @@ from typing import List
 
 # SMTP Configuration from Environment
 class Envs:
-    MAIL_USERNAME = os.getenv("SMTP_USERNAME", "no-reply@relaypost.com")
+    # 1. Authentication Credentials (your primary Gmail account used to log in to SMTP)
+    MAIL_USERNAME = os.getenv("SMTP_USERNAME", "kartikkalra2705@gmail.com")
     MAIL_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-    MAIL_FROM = os.getenv("SMTP_USERNAME", "no-reply@relaypost.com")
+    
+    # 2. Visible Sender Header (e.g. contact@relaypost.me, authorized under Gmail "Send mail as")
+    MAIL_FROM = os.getenv("SMTP_FROM", os.getenv("MAIL_FROM", "no-reply@relaypost.me"))
+    MAIL_FROM_NAME = os.getenv("SMTP_FROM_NAME", "RelayPost")
+    
+    # 3. SMTP Server settings
     MAIL_PORT = int(os.getenv("SMTP_PORT", "587"))
     MAIL_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-    MAIL_FROM_NAME = "RelayPost"
     FRONTEND_URL = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")[0]
+    
+    # SSL/TLS Flags
+    MAIL_STARTTLS = os.getenv("SMTP_STARTTLS", "True").lower() in ("true", "1")
+    MAIL_SSL_TLS = os.getenv("SMTP_SSL_TLS", "False").lower() in ("true", "1")
 
 conf = ConnectionConfig(
     MAIL_USERNAME=Envs.MAIL_USERNAME,
@@ -20,8 +29,8 @@ conf = ConnectionConfig(
     MAIL_PORT=Envs.MAIL_PORT,
     MAIL_SERVER=Envs.MAIL_SERVER,
     MAIL_FROM_NAME=Envs.MAIL_FROM_NAME,
-    MAIL_STARTTLS=True,
-    MAIL_SSL_TLS=False,
+    MAIL_STARTTLS=Envs.MAIL_STARTTLS,
+    MAIL_SSL_TLS=Envs.MAIL_SSL_TLS,
     USE_CREDENTIALS=True,
     VALIDATE_CERTS=os.getenv("SMTP_VALIDATE_CERTS", "False").lower() in ("true", "1")
 )
