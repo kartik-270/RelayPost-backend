@@ -9,6 +9,7 @@ from pathlib import Path
 
 from app.crud import crud
 from app.models import models
+from app.schemas import schemas
 from app.services.automation.tools import GeminiTool
 
 class SelfLearningEngine:
@@ -21,7 +22,7 @@ class SelfLearningEngine:
 
     async def analyze_and_update_prompt(self):
         """Analyzes recent articles and dynamically updates prompts if needed."""
-        print(f"[{datetime.now()}] Starting Self-Learning Loop...")
+        print(f"[{datetime.now()}] Starting Self-Learning Loop...", flush=True)
         try:
             # 1. Fetch articles generated in the last 24 hours
             yesterday = datetime.utcnow() - timedelta(days=1)
@@ -30,7 +31,7 @@ class SelfLearningEngine:
             ).all()
 
             if not recent_articles:
-                print("No articles found. Skipping learning loop.")
+                print(f"[{datetime.now()}] No articles found in the last 24 hours. Skipping learning loop.", flush=True)
                 return
 
             articles_summary = []
@@ -92,12 +93,12 @@ class SelfLearningEngine:
             if not isinstance(result, dict):
                 result = {}
             
-            print(f"Self-Learning Evaluation Score: {result.get('score', 'N/A')} / 10")
-            print(f"Notes: {result.get('evaluation_response', 'N/A')}")
+            print(f"[{datetime.now()}] Self-Learning Evaluation Score: {result.get('score', 'N/A')} / 10", flush=True)
+            print(f"[{datetime.now()}] Self-Learning Notes: {result.get('evaluation_response', 'N/A')}", flush=True)
 
             needs_update = result.get("needs_update", False)
             if not needs_update:
-                print("Gemini determined no prompt update is needed today.")
+                print(f"[{datetime.now()}] Gemini determined no prompt update is needed today.", flush=True)
                 return
 
             new_topic_dynamic = result.get("new_topic_brainstorm_dynamic")
@@ -112,7 +113,6 @@ class SelfLearningEngine:
                     next_version = f"v{len(current_version) + 1}"
                 
                 # 4. Save to DB
-                import schemas
                 new_version_data = schemas.PromptVersionCreate(
                     version=next_version,
                     score=float(result.get("score")) if result.get("score") else None,
@@ -122,10 +122,10 @@ class SelfLearningEngine:
                 )
                 crud.create_prompt_version(self.db, new_version_data)
                 
-                print(f"Successfully recorded new prompt version {next_version} in the database.")
+                print(f"[{datetime.now()}] Successfully recorded new prompt version {next_version} in the database.", flush=True)
 
         except Exception as e:
-            print(f"Self-Learning Engine Failed: {e}")
+            print(f"[{datetime.now()}] Self-Learning Engine Failed: {e}", flush=True)
             import traceback
             traceback.print_exc()
 
