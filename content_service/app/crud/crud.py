@@ -618,3 +618,18 @@ def create_prompt_version(db: Session, prompt_data: schemas.PromptVersionCreate)
     db.refresh(db_prompt)
     return db_prompt
 
+# --- Automation State ---
+def get_automation_state(db: Session, key: str):
+    """Get a value from the automation_state key-value store."""
+    row = db.query(models.AutomationState).filter(models.AutomationState.key == key).first()
+    return row.value if row else None
+
+def set_automation_state(db: Session, key: str, value):
+    """Set a value in the automation_state key-value store (upsert)."""
+    row = db.query(models.AutomationState).filter(models.AutomationState.key == key).first()
+    if row:
+        row.value = value
+    else:
+        row = models.AutomationState(key=key, value=value)
+        db.add(row)
+    db.commit()

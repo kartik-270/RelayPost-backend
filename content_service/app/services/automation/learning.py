@@ -11,6 +11,7 @@ from app.crud import crud
 from app.models import models
 from app.schemas import schemas
 from app.services.automation.tools import GeminiTool
+from app.services.automation.diversity import compute_diversity_score
 
 class SelfLearningEngine:
     def __init__(self, db: Session):
@@ -55,6 +56,17 @@ class SelfLearningEngine:
                 current_content_prompt = CONTENT_GENERATION_DYNAMIC_PROMPT
                 current_version = "v0"
 
+            # 1.5. Compute programmatic diversity score (Python, not Gemini)
+            # Uses last 80 articles for a meaningful sample
+            score_articles = self.db.query(models.Article).order_by(
+                models.Article.created_at.desc()
+            ).limit(80).all()
+            score_titles = [a.title for a in score_articles if a.title]
+            score_categories = [a.category.name for a in score_articles if a.category]
+            diversity_score = compute_diversity_score(score_titles, score_categories)
+
+            print(f"[{datetime.now()}] Programmatic Diversity Score: {diversity_score}/10", flush=True)
+
             # 2. Ask Gemini to evaluate
             evaluation_prompt = f"""
             You are an AI Quality Assurance System for RelayPost Intelligence.
@@ -69,18 +81,26 @@ class SelfLearningEngine:
             CURRENT CONTENT_GENERATION_DYNAMIC_PROMPT:
             {current_content_prompt}
 
+            PROGRAMMATIC DIVERSITY SCORE: {diversity_score}/10
+            (This score is computed automatically from the last 80 articles. It measures title-pattern diversity, word repetition, and category distribution evenness.
+            If this score is below 6, the prompt update MUST aggressively address the repetition patterns described below.)
+
             EVALUATION PARAMETERS:
-            1. Repetitiveness: Are the topics too similar?
+            1. Repetitiveness: Are the topics too similar? Look for repeated title structures, vocabulary, and framing patterns.
             2. Humanization: Does the tone sound robotic or like AI clichés?
-            3. Domain Focus: Evaluate if the platform is understanding its core. 'Tech' and 'AI' MUST remain the absolute highest priority and core focus of the system. Ensure the prompt does not deprioritize them.
+            3. Domain Balance: Are categories distributed evenly? (Category rotation is handled programmatically, but the prompt quality still affects how distinct topics feel within assigned categories.)
             4. Geo Bias: Are the articles solely US-centric? They should be targeted towards an Indian or global audience without ignoring other regions.
+
+            IMPORTANT NOTE:
+            - Category and title-structure rotation is now handled programmatically via round-robin queues in Python code. Your prompt updates should focus on CONTENT QUALITY, TONE, FRESHNESS, and ANTI-REPETITION guidance — not category selection rules.
+            - Do NOT add category rotation instructions or category balance rules to the prompts. That is handled elsewhere.
 
             INSTRUCTIONS:
             Based on your evaluation, output a JSON with:
             - "evaluation_response": A short summary of biases found or quality notes.
             - "score": 1-10 quality score.
             - "needs_update": true or false. True if the biases are too strong and we need to tweak the prompt weightings.
-            - "new_topic_brainstorm_dynamic": If needs_update is true, provide a completely rewritten TOPIC_BRAINSTORM_DYNAMIC_PROMPT string (plain text) to replace the old one. Use strong language to fix the detected bias. DO NOT USE ``` in the string.
+            - "new_topic_brainstorm_dynamic": If needs_update is true, provide a completely rewritten TOPIC_BRAINSTORM_DYNAMIC_PROMPT string (plain text) to replace the old one. Use strong language to fix the detected bias. DO NOT USE ``` in the string. DO NOT include category rotation rules (handled in code).
             - "new_content_generation_dynamic": If needs_update is true, provide a rewritten CONTENT_GENERATION_DYNAMIC_PROMPT string (plain text). DO NOT USE ``` in the string.
             """
 
@@ -112,10 +132,11 @@ class SelfLearningEngine:
                 except ValueError:
                     next_version = f"v{len(current_version) + 1}"
                 
-                # 4. Save to DB
+                # 4. Save to DB (now includes diversity_score)
                 new_version_data = schemas.PromptVersionCreate(
                     version=next_version,
                     score=float(result.get("score")) if result.get("score") else None,
+                    diversity_score=diversity_score,
                     changes=result.get("evaluation_response"),
                     topic_brainstorm_dynamic=new_topic_dynamic,
                     content_generation_dynamic=new_content_dynamic
@@ -123,6 +144,7 @@ class SelfLearningEngine:
                 crud.create_prompt_version(self.db, new_version_data)
                 
                 print(f"[{datetime.now()}] Successfully recorded new prompt version {next_version} in the database.", flush=True)
+                print(f"[{datetime.now()}] Diversity score at time of update: {diversity_score}/10", flush=True)
 
         except Exception as e:
             print(f"[{datetime.now()}] Self-Learning Engine Failed: {e}", flush=True)

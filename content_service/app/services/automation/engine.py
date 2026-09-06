@@ -15,6 +15,7 @@ from app.services.automation.prompts import (
     CONTENT_GENERATION_DYNAMIC_PROMPT, 
     SEO_OPTIMIZATION_PROMPT
 )
+from app.services.automation.diversity import DiversityController
 from app.crud import crud
 from app.models import models
 from app.schemas import schemas
@@ -25,7 +26,7 @@ class ArticleAutomationEngine:
         self.tavily = TavilyTool()
         self.gemini = GeminiTool()
         self.email = EmailTool()
-        self.unsplash = UnsplashTool() # Initialize UnsplashTool
+        self.unsplash = UnsplashTool()
         self.system_author_id = models.SYSTEM_AUTHOR_ID
 
     async def run_pipeline(self, batch_size: int = 3):
@@ -33,13 +34,22 @@ class ArticleAutomationEngine:
         print(f"[{datetime.now()}] Starting automation pipeline for {batch_size} articles...")
         
         try:
-            # 1. Topic Research (Gemini brainstorming)
-            categories = [c.name for c in crud.get_categories(self.db)]
-            
-            # Fetch recent titles and categories to avoid duplicates and repeating categories
-            recent_articles = self.db.query(models.Article).order_by(models.Article.created_at.desc()).limit(20).all()
+            # 0. Initialize diversity controller (deterministic assignments)
+            diversity = DiversityController(self.db)
+            assignments = diversity.get_batch_assignments(batch_size)
+            cooldown_words, cooldown_patterns = diversity.get_cooldown_text(window=30)
+            assignments_text = diversity.format_assignments_for_prompt(assignments)
+
+            print(f"[PIPELINE] Category assignments: {[a['category'] for a in assignments]}")
+            print(f"[PIPELINE] Structure assignments: {[a['title_structure']['id'] for a in assignments]}")
+            print(f"[PIPELINE] Archetype assignments: {[a['template_type'] for a in assignments]}")
+            print(f"[PIPELINE] Cooled-down words: {cooldown_words}")
+            print(f"[PIPELINE] Cooled-down patterns: {cooldown_patterns}")
+
+            # 1. Topic Research (Gemini brainstorming with hard constraints)
+            # Expanded recency window: 80 titles instead of 20
+            recent_articles = self.db.query(models.Article).order_by(models.Article.created_at.desc()).limit(80).all()
             existing_topics = [a.title for a in recent_articles]
-            existing_categories = list(set([a.category_name for a in recent_articles if a.category_name]))
 
             # Fetch a sample of keywords to encourage reuse
             keywords_list = self.db.query(models.Keyword).order_by(func.random()).limit(40).all()
@@ -50,13 +60,14 @@ class ArticleAutomationEngine:
             dynamic_topic = latest_prompt.topic_brainstorm_dynamic if latest_prompt else TOPIC_BRAINSTORM_DYNAMIC_PROMPT
             dynamic_content = latest_prompt.content_generation_dynamic if latest_prompt else CONTENT_GENERATION_DYNAMIC_PROMPT
 
-            self.current_content_prompt = dynamic_content # Store for process_single_topic
+            self.current_content_prompt = dynamic_content
 
             brainstorm_prompt = TOPIC_BRAINSTORM_CORE_PROMPT.format(
                 dynamic_instructions=dynamic_topic,
-                categories=", ".join(categories),
+                assigned_topics=assignments_text,
+                cooldown_words=cooldown_words,
+                cooldown_patterns=cooldown_patterns,
                 existing_topics=", ".join(existing_topics) if existing_topics else "None",
-                existing_categories=", ".join(existing_categories) if existing_categories else "None",
                 existing_keywords=existing_keywords if existing_keywords else "None"
             )
             brainstorm_result = await self.gemini.generate_structured(brainstorm_prompt, temperature=0.9)
@@ -69,10 +80,16 @@ class ArticleAutomationEngine:
                 brainstorm_result = {}
             raw_topics = brainstorm_result.get("topics", [])
             topics = raw_topics[:batch_size]
+
+            # Enforce assigned categories/template_types even if LLM deviated
+            for i, topic in enumerate(topics):
+                if i < len(assignments):
+                    topic["category"] = assignments[i]["category"]
+                    topic["template_type"] = assignments[i]["template_type"]
             
             print(f"[PIPELINE] Brainstorm returned {len(raw_topics)} topic(s). Processing {len(topics)} (batch_size={batch_size}).")
             for i, t in enumerate(topics):
-                print(f"  Topic {i+1}: {t.get('title')} | template: {t.get('template_type')}")
+                print(f"  Topic {i+1}: {t.get('title')} | category: {t.get('category')} | template: {t.get('template_type')}")
             
             for i, topic_info in enumerate(topics):
                 print(f"\n[PIPELINE] ===== Processing topic {i+1}/{len(topics)} =====")

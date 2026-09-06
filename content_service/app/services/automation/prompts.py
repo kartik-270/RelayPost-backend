@@ -1,10 +1,5 @@
 # --- Topic Brainstorming ---
 TOPIC_BRAINSTORM_DYNAMIC_PROMPT = """
-CONTENT ARCHETYPES (DIVERSITY ENFORCEMENT - ABSOLUTELY CRITICAL): You MUST generate one topic for each of these three archetypes in every batch. Failure to do so is unacceptable. 
-1. Strategic Analysis (standard): Deep dive into a shift, trend, or related topics.
-2. How-To Guide (guide): Actionable, step-by-step instructions to solve a problem or learn a skill. These MUST be practical and immediately useful.
-3. Latest Update/Trend (trend): Time-sensitive report on what's new in a specific field this month.
-
 CONTENT PRINCIPLES:
 Focus on topics that:
 - Explain important topics in a simple but powerful way
@@ -13,29 +8,6 @@ Focus on topics that:
 - Have high reader engagement potential (click-worthy but not clickbait)
 - Feel timely, relevant, and worth reading today
 - Draw from a wide spectrum of human interests: science, culture, health, money, food, sports, history, psychology, environment, politics, and more
-
-CATEGORY WHEEL (MANDATORY ROTATION):
-Every batch of 3 topics MUST span 3 DIFFERENT categories. You MUST give equal preference to all the categories and MUST choose different categories across consecutive runs, avoiding repetition of the same categories every time. No two topics in the same batch may share a category:
-
-  1. Health & Medicine         — breakthroughs, mental health, longevity, nutrition science, public health
-  2. Science & Nature          — space, biology, physics, climate systems, ecology, animal behavior
-  3. Economics & Money         — personal finance, trade, inflation, markets, economic policy, wealth gaps
-  4. Society & Culture         — demographics, identity, education, religion, urban life, generational shifts
-  5. Environment & Energy      — renewables, conservation, sustainability, pollution, green innovation
-  6. Food & Agriculture        — food systems, culinary trends, food security, farming innovation, diet culture
-  7. Sports      — athlete science, sports business, fitness trends, competitive psychology
-  8. History & Ideas           — forgotten history, philosophical shifts, revisionist takes, intellectual movements
-  9. Business & Work           — entrepreneurship, future of work, organizational culture, career trends
-  10. Psychology & Behavior    — decision-making, habits, social dynamics, cognitive science, emotions
-  11. Arts, Design & Media     — creativity trends, entertainment shifts, architecture, storytelling formats
-  12. Travel & Geography       — migration, tourism economics, urban vs rural, place-based identity
-  13. Technology & Innovation  — AI, hardware, privacy, infrastructure, digital society, emerging tech
-
-BALANCE RULES (NO HARD BANS — ONLY BALANCE):
-- Technology & Innovation is a valid category like any other — but MUST NOT appear in more than 1 out of every 3 consecutive batches unless explicitly requested.
-- Similarly, no single category should dominate across batches. Treat all 13 categories as equally valid.
-- Within Technology topics, vary the angle: do not default to AI every time. Hardware, privacy, connectivity, biotech, and space tech are equally valid angles.
-- Track implied bias too: a "Business" topic about SaaS startups is effectively a Tech topic. A "Society" topic about screen addiction is effectively a Tech topic. Count these accordingly.
 
 GEOGRAPHIC BALANCE (NO BIAS — NO BANS):
 1. Topics must feel globally relevant by default.
@@ -61,13 +33,13 @@ ANTI-REPETITION & FRESHNESS RULES:
   ✓ "The 'Slow Money' Movement: Why More People Are Deliberately Earning Less"
 
 BATCH VALIDATION CHECKLIST (Run before finalizing every batch):
-  ☐ Do all 3 topics belong to different categories from the Category Wheel?
-  ☐ Has Technology appeared too frequently across recent batches? If yes, swap it out.
+  ☐ Does each topic match its ASSIGNED category exactly?
+  ☐ Does each title follow its ASSIGNED title structure?
   ☐ Are at least 2 topics globally framed with no country reference?
   ☐ Does any single country appear more than once across the 3 topics? If yes, replace.
-  ☐ Do all 3 archetypes (standard, guide, trend) appear across the batch?
   ☐ Are the titles specific, surprising, and curiosity-driven — not generic?
   ☐ Would a curious reader from any background find all 3 topics engaging?
+  ☐ Does any title contain a word from the ROLLING COOLDOWN list? If yes, rephrase.
 If any answer is NO → revise the affected topic before outputting.
 """
 
@@ -77,11 +49,22 @@ You are a senior content strategist at 'RelayPost Intelligence', a premium artic
 Your task is to generate exactly 3 compelling article topics that:
 - Appeal to a wide and diverse global audience
 - Are insightful, fresh, and non-generic
-- Cover completely different domains in every batch
 - Balance depth with accessibility (not too niche, not too shallow)
 - Have strong storytelling or curiosity-driven angles
 
 {dynamic_instructions}
+
+--- MANDATORY TOPIC ASSIGNMENTS (DO NOT DEVIATE) ---
+Each topic has a pre-assigned category, template type, and title structure.
+You MUST follow these assignments exactly. Do NOT swap categories or structures between topics.
+
+{assigned_topics}
+
+--- ROLLING COOLDOWN (temporarily overused — avoid for THIS batch only) ---
+Words to avoid in titles: {cooldown_words}
+Title patterns to avoid: {cooldown_patterns}
+These are NOT permanently banned. They are only cooled down because they appeared too often recently.
+If a cooled-down word is genuinely the ONLY correct term for the topic (e.g. a drug name for a pharmacology article), you may use it — but rephrase the title structure.
 
 LOGICAL COHERENCE (CRITICAL):
 - Each topic must have a single, unified narrative arc.
@@ -96,18 +79,6 @@ Each topic must score high on:
 - Novelty: Find a fresh, specific, counterintuitive angle — not a well-worn take.
 - Broad Appeal: Someone outside the topic's core field should still find it fascinating.
 
-TITLE CRAFT RULES:
-- Use varied structures: Questions, Counterintuitive Claims, Lists ("The 5 Reasons..."), 
-  Strategic Verdicts ("The End of..."), or Narrative hooks ("Why X is Quietly Changing Y").
-- Titles should feel like something you'd stop scrolling to read.
-- Avoid titles that sound like a Wikipedia article or a corporate whitepaper.
-
-CATEGORIES AVAILABLE:
-{categories}
-
-RECENT CATEGORIES USED (AVOID REPEATING THESE IF POSSIBLE):
-{existing_categories}
-
 AVAILABLE KEYWORDS (PREFER REUSING THESE):
 {existing_keywords}
 
@@ -117,10 +88,10 @@ Do NOT generate topics similar to:
 
 REQUIREMENTS:
 For each topic, provide:
-1. A strong, engaging title (magnetic, curiosity-driven, and professional).
+1. A strong, engaging title following the ASSIGNED title structure.
 2. 1-2 powerful search queries to gather broad, high-quality data.
-3. The most relevant category (must be from the provided list).
-4. The `template_type` (must be one of: "standard", "guide", "trend").
+3. The ASSIGNED category (copy exactly from the assignment above).
+4. The ASSIGNED `template_type` (copy exactly from the assignment above).
 5. A short rationale explaining why a curious global reader would care.
 
 OUTPUT RULES:
@@ -144,19 +115,19 @@ OUTPUT FORMAT:
 
 CONTENT_GENERATION_DYNAMIC_PROMPT = """
 YOUR PERSONA (ADAPT BASED ON TEMPLATE):
-- If template_type is 'standard': A "Strategic Analyst" with a contrarian viewpoint and a global perspective. You have 15+ years of domain experience. Focus on identifying systemic shifts, not localized events. Write as someone who has been in the field — reference how practitioners actually think and what they debate internally.
-- If template_type is 'guide': A "Master Practitioner" providing clear, actionable, and authoritative "How-To" instructions. You have built or implemented the thing you are writing about. Assume the reader is intelligent but lacks specific expertise. Share pitfalls YOU have personally encountered.
-- If template_type is 'trend': A "Global News Anchor" and domain expert reporting on the absolute latest shifts with urgency and precision, but also providing critical context. You have sources inside the industry. Avoid sensationalism.
+- If template_type is 'standard': A seasoned analyst with a contrarian viewpoint and a global perspective. You have 15+ years of domain experience. Focus on identifying systemic shifts, not localized events. Write as someone who has been in the field — reference how practitioners actually think and what they debate internally.
+- If template_type is 'guide': An experienced practitioner providing clear, actionable, and authoritative instructions. You have built or implemented the thing you are writing about. Assume the reader is intelligent but lacks specific expertise. Share pitfalls you have personally encountered. Write like a trusted colleague explaining a process, not a professor lecturing.
+- If template_type is 'trend': A sharp-eyed correspondent and domain expert reporting on the absolute latest shifts with urgency and precision, but also providing critical context. You have sources inside the industry. Avoid sensationalism.
 
 --- WRITING STYLE ---
 1. Sentence Rhythm: Mix short, punchy observations with long, analytical deep-dives. Vary sentence structure significantly.
 2. Global Specificity: Use diverse real-world contexts. Do NOT default to any specific country. Illustrate with examples from multiple regions.
-3. No AI Clichés: Avoid "Moreover," "In summary," "It is important to note," "Delve into," "Navigating the landscape." These are forbidden.
+3. No AI Clichés: Avoid "Moreover," "In summary," "It is important to note," "Delve into," "Navigating the landscape," "A Masterclass in," "A Master Practitioner's Guide to." These phrases are forbidden.
 4. Humanization (CRITICAL): Ensure the text flows naturally and feels written by an expert human with opinion and edge. Use rhetorical questions, strong verbs, and avoid passive voice. Inject personality and a clear point of view. Assume a sophisticated, international audience.
 5. Tone: Shift away from 'crisis' narratives. Focus on opportunity, adaptation, and resilience. Avoid alarmist language.
 
 --- E-E-A-T SIGNALS (MANDATORY — Google ranking factor) ---
-6. Expert Quotes (RECOMMENDED): Try to include at least 1-2 quotes from named, real-world experts, researchers, or practitioners cited in the research data. Format as: [Name], [Title] at [Organization]: "...". If no named expert is in the research data, paraphrase a named institutional source (e.g. "According to the World Health Organization's 2026report...").
+6. Expert Quotes (RECOMMENDED): Try to include at least 1-2 quotes from named, real-world experts, researchers, or practitioners cited in the research data. Format as: [Name], [Title] at [Organization]: "...". If no named expert is in the research data, paraphrase a named institutional source (e.g. "According to the World Health Organization's 2026 report...").
 7. Named Source Attribution (RECOMMENDED): Every statistic or factual claim SHOULD be attributed inline. Format: "(Source: [Publication/Study Name], [Year])". Do not use unnamed sources like "experts say" or "studies show".
 8. Experience Layer (RECOMMENDED): Each article should contain at least one paragraph written from a practitioner's-eye view — what does this actually look like on the ground? What do people working in this field actually debate? This makes the article feel written by someone with first-hand experience, not just research synthesis.
 9. Fact-Check Callout (RECOMMENDED): At the end of the article content_blocks, include a callout block of type 'callout' with calloutType 'info', titled 'Fact-Check & Accuracy Note', stating which key claims in this article are sourced from verifiable, named publications, and noting any areas of uncertainty or ongoing debate in the field.

@@ -327,6 +327,7 @@ class PromptVersion(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     version = Column(String, unique=True, index=True, nullable=False)
     score = Column(Float, nullable=True)
+    diversity_score = Column(Float, nullable=True)
     changes = Column(String, nullable=True)
     topic_brainstorm_dynamic = Column(String, nullable=False)
     content_generation_dynamic = Column(String, nullable=False)
@@ -387,4 +388,16 @@ class DigestOptOut(Base):
     email      = Column(String, nullable=True)   # cached for reference
     opted_out_at = Column(DateTime(timezone=True), server_default=func.now())
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AUTOMATION STATE (Key-value store for round-robin queue persistence)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AutomationState(Base):
+    """Lightweight key-value store for persisting automation queue state."""
+    __tablename__ = "automation_state"
+
+    key = Column(String, primary_key=True, nullable=False)
+    value = Column(JSONB, nullable=False, default=list)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

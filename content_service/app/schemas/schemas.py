@@ -304,6 +304,7 @@ class FollowResponse(BaseModel):
 class PromptVersionBase(BaseModel):
     version: str
     score: Optional[float] = None
+    diversity_score: Optional[float] = None
     changes: Optional[str] = None
     topic_brainstorm_dynamic: str
     content_generation_dynamic: str
