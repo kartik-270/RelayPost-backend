@@ -86,14 +86,16 @@ class SelfLearningEngine:
             If this score is below 6, the prompt update MUST aggressively address the repetition patterns described below.)
 
             EVALUATION PARAMETERS:
-            1. Repetitiveness: Are the topics too similar? Look for repeated title structures, vocabulary, and framing patterns.
-            2. Humanization: Does the tone sound robotic or like AI clichés?
-            3. Domain Balance: Are categories distributed evenly? (Category rotation is handled programmatically, but the prompt quality still affects how distinct topics feel within assigned categories.)
-            4. Geo Bias: Are the articles solely US-centric? They should be targeted towards an Indian or global audience without ignoring other regions.
+            1. Repetitiveness & Title Fatigue: Are the topics too similar? Look for repeated title formulas, identical buzzwords, or predictable tropes.
+            2. Hook Strength & Intellectual Tension: Do the titles create an irresistible curiosity gap, or do they sound like passive textbook chapters?
+            3. Search Query Precision: Are the proposed search queries targeted enough to retrieve empirical studies, primary data, and expert debates?
+            4. Humanization & Voice: Does the writing flow like high-caliber journalism, or does it suffer from AI cliches and sterile neutrality?
+            5. Geo Bias: Are the topics solely US-centric? They must address global and emerging markets without neglecting diverse regions.
 
             IMPORTANT NOTE:
-            - Category and title-structure rotation is now handled programmatically via round-robin queues in Python code. Your prompt updates should focus on CONTENT QUALITY, TONE, FRESHNESS, and ANTI-REPETITION guidance — not category selection rules.
+            - Category and title-structure rotation is handled programmatically via round-robin queues in Python code. Your prompt updates should focus on CONTENT QUALITY, TONE, NARRATIVE TENSION, and ANTI-REPETITION guidance — not category selection rules.
             - Do NOT add category rotation instructions or category balance rules to the prompts. That is handled elsewhere.
+            - When providing "new_topic_brainstorm_dynamic", you MUST preserve the core structural blocks: CONTENT PRINCIPLES, NARRATIVE ANGLE BLUEPRINTS, GEOGRAPHIC BALANCE, ANTI-REPETITION & FRESHNESS RULES, SEARCH QUERY PRECISION RULES, and BATCH VALIDATION CHECKLIST, while aggressively injecting new counter-measures against detected weaknesses.
 
             INSTRUCTIONS:
             Based on your evaluation, output a JSON with:
