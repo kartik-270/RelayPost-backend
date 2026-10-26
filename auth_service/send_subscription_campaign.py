@@ -40,15 +40,6 @@ if "@postgres:" in db_url:
         os.environ["DATABASE_URL"] = db_url.replace("@postgres:", "@localhost:")
 
 from sqlalchemy.orm import Session
-try:
-    from fastapi_mail import FastMail, MessageSchema, MessageType
-    HAS_FASTAPI_MAIL = True
-except ImportError:
-    HAS_FASTAPI_MAIL = False
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
 from app.core.database import SessionLocal
 from app.models import models
 from app.core.auth_deps import create_access_token
@@ -65,6 +56,32 @@ class Envs:
     MAIL_SSL_TLS = os.getenv("SMTP_SSL_TLS", "False").lower() in ("true", "1")
 
 FRONTEND_URL = Envs.FRONTEND_URL.rstrip("/")
+
+try:
+    from app.core.mail_utils import conf, FastMail, MessageSchema, MessageType
+    HAS_FASTAPI_MAIL = True
+except Exception:
+    try:
+        from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType
+        conf = ConnectionConfig(
+            MAIL_USERNAME=Envs.MAIL_USERNAME,
+            MAIL_PASSWORD=Envs.MAIL_PASSWORD,
+            MAIL_FROM=Envs.MAIL_FROM,
+            MAIL_PORT=Envs.MAIL_PORT,
+            MAIL_SERVER=Envs.MAIL_SERVER,
+            MAIL_FROM_NAME=Envs.MAIL_FROM_NAME,
+            MAIL_STARTTLS=Envs.MAIL_STARTTLS,
+            MAIL_SSL_TLS=Envs.MAIL_SSL_TLS,
+            USE_CREDENTIALS=True,
+            VALIDATE_CERTS=os.getenv("SMTP_VALIDATE_CERTS", "False").lower() in ("true", "1")
+        )
+        HAS_FASTAPI_MAIL = True
+    except Exception:
+        HAS_FASTAPI_MAIL = False
+        conf = None
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
 
 def build_campaign_html(
     display_name: str,
@@ -403,7 +420,7 @@ async def send_campaign_to_user(user: models.User, contribution_amount: int = 50
 
     # 4. Dispatch email
     try:
-        if HAS_FASTAPI_MAIL:
+        if HAS_FASTAPI_MAIL and conf is not None:
             message = MessageSchema(
                 subject="Exclusive Invitation: Join RelayPost Plus or Support our Mission",
                 recipients=[user.email],
