@@ -196,3 +196,14 @@ class UserNotificationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- CAMPAIGN TRACKING SCHEMAS ---
+
+class CampaignTrackClickRequest(BaseModel):
+    link_type: str
+    campaign_name: str = "founding_member"
+    user_id: Optional[UUID] = None
+    email: Optional[str] = None
+    amount: Optional[int] = None
+    target_url: Optional[str] = None

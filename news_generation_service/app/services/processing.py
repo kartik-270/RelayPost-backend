@@ -220,8 +220,8 @@ def generate_ai_summaries():
         db.close()  # <-- DB connection fully released before any Gemini call
     # ---------------------------------------------------------------
 
-    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.0-flash")
-    fallback_model_name = "gemini-2.0-flash-lite"
+    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-3.1-flash-lite")
+    fallback_model_name = "gemma-4-31b-it"
     primary_key = os.getenv("GEMINI_API_KEY")
     secondary_key = os.getenv("GEMINI_API_KEY_SECONDARY")
     tertiary_key = os.getenv("GEMINI_API_KEY_TERTIARY")

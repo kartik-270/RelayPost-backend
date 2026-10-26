@@ -140,3 +140,65 @@ def update_contribution_status(db: Session, db_contribution: models.Contribution
     db.commit()
     db.refresh(db_contribution)
     return db_contribution
+
+
+# --- Campaign Tracking ---
+from typing import Optional
+
+def record_campaign_click(
+    db: Session,
+    link_type: str,
+    campaign_name: str = "founding_member",
+    user_id: Optional[uuid.UUID] = None,
+    email: Optional[str] = None,
+    amount: Optional[int] = None,
+    target_url: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None
+):
+    click = models.CampaignClick(
+        user_id=user_id,
+        email=email,
+        campaign_name=campaign_name,
+        link_type=link_type,
+        amount=amount,
+        target_url=target_url,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+    db.add(click)
+    db.commit()
+    db.refresh(click)
+    return click
+
+
+def get_campaign_stats(db: Session, campaign_name: str = "founding_member"):
+    clicks = db.query(models.CampaignClick).filter(models.CampaignClick.campaign_name == campaign_name).all()
+    by_link = {}
+    for c in clicks:
+        by_link[c.link_type] = by_link.get(c.link_type, 0) + 1
+
+    unique_users = len(set(c.email or str(c.user_id) for c in clicks if c.email or c.user_id))
+
+    recent = db.query(models.CampaignClick).filter(
+        models.CampaignClick.campaign_name == campaign_name
+    ).order_by(models.CampaignClick.clicked_at.desc()).limit(25).all()
+
+    return {
+        "campaign_name": campaign_name,
+        "total_clicks": len(clicks),
+        "unique_users_clicked": unique_users,
+        "clicks_by_link": by_link,
+        "recent_clicks": [
+            {
+                "id": str(r.id),
+                "email": r.email,
+                "user_id": str(r.user_id) if r.user_id else None,
+                "link_type": r.link_type,
+                "amount": r.amount,
+                "target_url": r.target_url,
+                "clicked_at": r.clicked_at.isoformat() if r.clicked_at else None
+            }
+            for r in recent
+        ]
+    }

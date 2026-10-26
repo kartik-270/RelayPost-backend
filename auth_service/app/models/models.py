@@ -179,3 +179,19 @@ class UserNotification(Base):
     is_read = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CampaignClick(Base):
+    """Tracks email campaign link clicks (e.g. subscription vs one-time contribution)."""
+    __tablename__ = "campaign_clicks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=True)
+    email = Column(String, index=True, nullable=True)
+    campaign_name = Column(String, default="founding_member", index=True, nullable=False)
+    link_type = Column(String, index=True, nullable=False)  # "subscription", "contribution_50", "pricing", etc.
+    amount = Column(Integer, nullable=True)
+    target_url = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    clicked_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)

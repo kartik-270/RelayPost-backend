@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, Depends, HTTPException, status, Response, Request, BackgroundTasks
+from fastapi.responses import RedirectResponse
 from typing import List, Optional
 import uuid
 import hmac
@@ -447,6 +448,7 @@ else:
     rzp_client = None
 
 @app.post("/auth/payment/create-order", response_model=schemas.CreateOrderResponse)
+@app.post("/payment/create-order", response_model=schemas.CreateOrderResponse)
 def create_payment_order(payload: schemas.CreateOrderRequest, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     if not rzp_client:
         raise HTTPException(status_code=500, detail="Razorpay is not configured")
@@ -475,6 +477,7 @@ def create_payment_order(payload: schemas.CreateOrderRequest, current_user: mode
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/auth/payment/verify", response_model=schemas.VerifyPaymentResponse)
+@app.post("/payment/verify", response_model=schemas.VerifyPaymentResponse)
 def verify_payment(payload: schemas.VerifyPaymentRequest, current_user: models.User = Depends(get_current_active_user), db: Session = Depends(get_db)):
     db_contribution = crud.get_contribution_by_order_id(db, payload.razorpay_order_id)
     if not db_contribution:
@@ -534,6 +537,128 @@ async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
                 crud.update_contribution_status(db, db_contribution, status, payment_id)
 
     return {"status": "ok"}
+
+
+# =============================================================================
+# CAMPAIGN LINK TRACKING ROUTES
+# =============================================================================
+
+@app.get("/campaign/track-click")
+@app.get("/auth/campaign/track-click")
+def track_campaign_click_redirect(
+    request: Request,
+    link_type: str,
+    redirect_url: str,
+    campaign_name: str = "founding_member",
+    token: Optional[str] = None,
+    user_id: Optional[str] = None,
+    email: Optional[str] = None,
+    amount: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Server-side redirect click tracking: records click event and redirects to destination URL.
+    """
+    extracted_user_id = None
+    extracted_email = email
+
+    if user_id:
+        try:
+            extracted_user_id = uuid.UUID(user_id)
+        except Exception:
+            pass
+
+    if token:
+        try:
+            import jwt
+            from app.core.auth_deps import SECRET_KEY, ALGORITHM
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            if not extracted_email:
+                extracted_email = payload.get("email")
+            if not extracted_user_id and payload.get("sub"):
+                try:
+                    extracted_user_id = uuid.UUID(payload.get("sub"))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else None)
+    user_agent = request.headers.get("user-agent")
+
+    crud.record_campaign_click(
+        db=db,
+        link_type=link_type,
+        campaign_name=campaign_name,
+        user_id=extracted_user_id,
+        email=extracted_email,
+        amount=amount,
+        target_url=redirect_url,
+        ip_address=client_ip,
+        user_agent=user_agent
+    )
+
+    return RedirectResponse(url=redirect_url, status_code=307)
+
+
+@app.post("/campaign/track-click")
+@app.post("/auth/campaign/track-click")
+def track_campaign_click_api(
+    payload: schemas.CampaignTrackClickRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    API endpoint for frontend / SPA to report link clicks directly.
+    """
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else None)
+    user_agent = request.headers.get("user-agent")
+
+    user_id = payload.user_id
+    email = payload.email
+
+    auth_hdr = request.headers.get("authorization", "")
+    if auth_hdr.startswith("Bearer "):
+        try:
+            import jwt
+            from app.core.auth_deps import SECRET_KEY, ALGORITHM
+            tok = auth_hdr.split(" ")[1]
+            tok_payload = jwt.decode(tok, SECRET_KEY, algorithms=[ALGORITHM])
+            if not email:
+                email = tok_payload.get("email")
+            if not user_id and tok_payload.get("sub"):
+                try:
+                    user_id = uuid.UUID(tok_payload.get("sub"))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    click = crud.record_campaign_click(
+        db=db,
+        link_type=payload.link_type,
+        campaign_name=payload.campaign_name,
+        user_id=user_id,
+        email=email,
+        amount=payload.amount,
+        target_url=payload.target_url,
+        ip_address=client_ip,
+        user_agent=user_agent
+    )
+
+    return {"status": "ok", "click_id": str(click.id)}
+
+
+@app.get("/campaign/clicks/stats")
+@app.get("/auth/campaign/clicks/stats")
+def get_campaign_stats_endpoint(
+    campaign_name: str = "founding_member",
+    db: Session = Depends(get_db)
+):
+    """
+    Returns aggregated stats on email campaign link clicks.
+    """
+    return crud.get_campaign_stats(db, campaign_name=campaign_name)
 
 
 # =============================================================================
