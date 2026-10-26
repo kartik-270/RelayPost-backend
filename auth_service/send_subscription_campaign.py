@@ -135,28 +135,16 @@ def build_campaign_html(
         <!-- Main Card Container -->
         <table role="presentation" class="email-container" width="100%" style="max-width: 600px; background-color: #0f172a; border: 1px solid #1e293b; border-radius: 16px;" cellspacing="0" cellpadding="0" border="0">
           
-          <!-- Top Accent Bar -->
-          <tr>
-            <td style="height: 4px; background: linear-gradient(90deg, #4f46e5, #9333ea, #38bdf8);"></td>
-          </tr>
 
           <!-- Header Section -->
           <tr>
             <td style="padding: 32px 32px 16px 32px; text-align: left;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                <tr>
-                  <td>
-                    <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #818cf8; background-color: rgba(99, 102, 241, 0.15); padding: 5px 12px; border-radius: 20px; border: 1px solid rgba(99, 102, 241, 0.3);">
-                      ✦ Exclusive Reader Invitation
-                    </span>
-                  </td>
-                </tr>
-              </table>
+              
               <h1 style="color: #ffffff; font-size: 26px; font-weight: 800; line-height: 1.25; margin: 20px 0 8px 0; letter-spacing: -0.5px;">
                 Support RelayPost &amp; Unlock Full Intelligence
               </h1>
               <p style="color: #94a3b8; font-size: 15px; line-height: 1.5; margin: 0 0 24px 0;">
-                Hi {name}, as one of our early readers, we invite you to support our independent newsroom and intelligence platform. Choose either a recurring founding membership or make a direct one-time contribution.
+                Hi {name}, as one of our early readers, we invite you to support our independent newsroom and intelligence platform. You can either a recurring founding membership or make a direct one-time contribution.
               </p>
 
               <!-- OPTION 1: Monthly Subscription Plan Card -->
@@ -179,11 +167,11 @@ def build_campaign_html(
                       RelayPost Plus (7-Day Free Trial)
                     </h3>
                     <p style="color: #94a3b8; font-size: 13px; line-height: 1.45; margin: 0 0 16px 0;">
-                      Full daily AI syntheses, interactive Q&amp;A, ad-free reading, and Sunday intelligence digests. 100% free for the first 7 days.
+                      Complete daily AI syntheses, interactive Q&amp;A, ad-free reading, and Sunday intelligence digests. 100% free for the first 7 days.
                     </p>
                     <div>
                       <a href="{checkout_url}" style="display: inline-block; background-color: #4f46e5; color: #ffffff !important; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 24px; border-radius: 8px;">
-                        Activate 7-Day Free Trial (₹99/mo) &rarr;
+                        Activate 7-Day Free Trial &rarr;
                       </a>
                     </div>
                     <p style="color: #64748b; font-size: 11px; margin: 10px 0 0 0;">
@@ -200,24 +188,24 @@ def build_campaign_html(
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                       <tr>
                         <td>
-                          <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #38bdf8; background-color: rgba(56, 189, 248, 0.15); padding: 3px 8px; border-radius: 6px;">
+                          <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #d180da; background-color: rgba(56, 189, 248, 0.15); padding: 3px 8px; border-radius: 6px;">
                             Option B &bull; One-Time Support
                           </span>
                         </td>
                         <td align="right">
-                          <span style="font-size: 15px; font-weight: 800; color: #38bdf8;">₹{contribution_amount}<span style="font-size: 12px; color: #94a3b8; font-weight: 500;"> direct</span></span>
+                          <span style="font-size: 15px; font-weight: 800; color: #d180da;">₹{contribution_amount}<span style="font-size: 12px; color: #94a3b8; font-weight: 500;"> direct</span></span>
                         </td>
                       </tr>
                     </table>
                     <h3 style="color: #ffffff; font-size: 17px; font-weight: 700; margin: 12px 0 6px 0;">
-                      Direct One-Time Contribution
+                      One-Time Contribution
                     </h3>
                     <p style="color: #94a3b8; font-size: 13px; line-height: 1.45; margin: 0 0 14px 0;">
-                      Prefer not to subscribe? Support our mission directly with a single contribution. Default is ₹{contribution_amount}, and you can adjust the amount on checkout.
+                      Prefer not to subscribe? Support our mission with a single contribution. Default is ₹{contribution_amount}, and you can adjust the amount on checkout.
                     </p>
                     <div style="margin-bottom: 12px;">
-                      <a href="{contribution_url}" style="display: inline-block; background-color: #0284c7; color: #ffffff !important; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 24px; border-radius: 8px;">
-                        Contribute ₹{contribution_amount} Once &rarr;
+                      <a href="{contribution_url}" style="display: inline-block; background-color: #ac5ab4; color: #ffffff !important; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 24px; border-radius: 8px;">
+                        Contribute Once &rarr;
                       </a>
                     </div>
                     <!-- Preset chips row -->
@@ -347,7 +335,7 @@ def build_campaign_html(
           <tr>
             <td style="padding: 24px 32px; background-color: #0b1120; border-top: 1px solid #1e293b; text-align: center;">
               <p style="color: #64748b; font-size: 12px; margin: 0 0 6px 0;">
-                RelayPost Intelligence &bull; Independent, High-Signal Journalism & Research
+                RelayPost Intelligence
               </p>
               <p style="color: #475569; font-size: 11px; margin: 0;">
                 You are receiving this because you have an active RelayPost account.
