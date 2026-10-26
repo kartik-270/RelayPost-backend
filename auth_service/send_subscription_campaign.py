@@ -128,7 +128,7 @@ def build_campaign_html(
     }}
   </style>
 </head>
-<body style="margin: 0; padding: 24px 12px; background-color: #0b0f19;">
+<body style="margin: 0; padding: 14px 12px; background-color: #0b0f19;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
     <tr>
       <td align="center">
@@ -227,7 +227,7 @@ def build_campaign_html(
                           <a href="{p250_url}" style="display: inline-block; background-color: #0f172a; border: 1px solid #475569; color: #e2e8f0 !important; text-decoration: none; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px;">₹250</a>
                         </td>
                         <td style="padding: 2px 4px;">
-                          <a href="{custom_url}" style="display: inline-block; background-color: #0f172a; border: 1px solid #475569; color: #e2e8f0 !important; text-decoration: none; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px;">Custom &rarr;</a>
+                          <a href="{custom_url}" style="display: inline-block; background-color: #0f172a; border: 1px solid #475569; color: #e2e8f0 !important; text-decoration: none; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px;">Custom</a>
                         </td>
                       </tr>
                     </table>
